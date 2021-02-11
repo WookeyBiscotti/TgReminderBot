@@ -1,0 +1,1 @@
+CREATE TABLE Reminder (near_ts INT, chat_id TEXT, tzinfo TEXT, time_form TEXT, name TEXT, hour INT, minute INT, seconds INT, day INT, month INT, year INT);
