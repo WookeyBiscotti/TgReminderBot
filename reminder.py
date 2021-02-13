@@ -1,5 +1,6 @@
 import datetime
 import re
+import pytz
 
 from calendar import monthrange
 
@@ -15,16 +16,16 @@ def number(str_num):
 
 
 class Reminder:
-    def __init__(self, chat_id: str, time_zone: datetime.timezone, time_form):
+    def __init__(self, chat_id: str, utc: int, time_form):
         self.time_form = time_form
         self.chat_id = chat_id
-        self.timezone = time_zone
+        self.utc = utc
         if len(time_form) < 3:
             raise RuntimeError(
                 "Current args: {}, len {}. Usage /add [date] [time] [name]".format(time_form, len(time_form)))
 
         idx = 0
-        res, err = self._get_date(time_zone, time_form[idx])
+        res, err = self._get_date(time_form[idx])
         if not res: raise RuntimeError(err)
         idx += 1
 
@@ -95,9 +96,9 @@ class Reminder:
 
         return True, ""
 
-    def _get_date(self, time_zone: datetime.timezone, date_str: str) -> (bool, str):
+    def _get_date(self, date_str: str) -> (bool, str):
         num = number(date_str)
-        now = datetime.datetime.now(time_zone)
+        now = datetime.datetime.now(tz=pytz.FixedOffset(self.utc * 60))
         if num is not None:
             if num <= monthrange(now.date().year, now.date().month)[1]:
                 self.day = num
@@ -154,11 +155,12 @@ class Reminder:
         self.near_ts = self._get_near_ts()
 
     def _get_near_ts(self):
-        now = datetime.datetime.now(self.timezone)
+        tzinfo = pytz.FixedOffset(self.utc * 60)
+        now = datetime.datetime.now(tz=tzinfo)
         now_ts = now.timestamp()
 
-        near = datetime.datetime(self.year, 1, 1, tzinfo=self.timezone) if self.year != -1 else datetime.datetime(
-            now.year, 1, 1, tzinfo=self.timezone)
+        near = datetime.datetime(self.year, 1, 1, tzinfo=tzinfo) if self.year != -1 else datetime.datetime(
+            now.year, 1, 1, tzinfo=tzinfo)
 
         near = near.replace(second=59 if self.second == -1 else self.second)
         near = near.replace(minute=59 if self.minute == -1 else self.minute)
@@ -209,6 +211,3 @@ class Reminder:
                 near = new_near
 
         return near.timestamp()
-
-    def save(self, connect):
-        pass

@@ -1,0 +1,1 @@
+CREATE TABLE Chats (chat_id TEXT, utc INT);

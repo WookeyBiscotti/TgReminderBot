@@ -60,12 +60,15 @@ class Migration:
         for file_name in files:
             if not is_id_exist(cursor, "migration_history", "migration_id", file_name.replace(".sql", "")):
                 with open(join(self.migrations_path, file_name), 'r') as file:
+                    print(f"Migration {file_name}")
                     cursor.execute(file.read())
+                    self.connection.commit()
 
                 cursor.execute(
                     ''' INSERT INTO migration_history VALUES({ts},{id},"") '''.format(
                         ts=datetime.datetime.now().timestamp(),
                         id=file_name.replace(".sql", "")))
+                self.connection.commit()
 
-        self.connection.commit()
+
         cursor.close()

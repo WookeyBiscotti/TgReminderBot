@@ -20,6 +20,10 @@ bot.
 """
 
 import logging
+import reminder
+import datetime
+import pytz
+import re
 
 from telegram import Update
 from telegram.ext import (
@@ -31,8 +35,6 @@ from telegram.ext import (
     CallbackContext,
 )
 
-import reminder
-import datetime
 from reminders_manager import RemindersManager
 
 # Enable logging
@@ -45,16 +47,43 @@ logger = logging.getLogger(__name__)
 manager = RemindersManager()
 
 
-# Define a few command handlers. These usually take the two arguments update and
-# context. Error handlers also receive the raised TelegramError object in error.
-def start(update: Update, context: CallbackContext) -> None:
-    update.message.reply_text('Hi! Use /add <date> <time> <name> to add a reminder')
+def start_begin(update: Update, context: CallbackContext) -> int:
+    update.message.reply_text('Hi!')
+    return 0
+
+
+def start_body(update: Update, context: CallbackContext) -> int:
+    update.message.reply_text('Enter yor current time for timezone identification: e.g. 19:33')
+    return 1
+
+
+def start_end(update: Update, context: CallbackContext) -> int:
+    text = update.message.text
+    now = datetime.datetime.now(tz=pytz.FixedOffset(0))
+    m = re.match("(?P<hour>[0-9]{1,2})\:(?P<minute>[0-9]{1,2})", update.message.text)
+    hour = int(m.groupdict().get("hour"))
+    minute = int(m.groupdict().get("minute"))
+    if 23 < hour or hour < 0 or minute > 59 or minute < 0:
+        return 0
+
+    dt = now.replace(hour=hour, minute=minute) - now
+
+    if (abs(dt.total_seconds()) / 60) % 60 > 30:
+        hour = dt.total_seconds() // 3600 + (-1 if dt.total_seconds() < 0 else 1)
+    if abs(hour) >= 12:
+        hour = hour + (24 if hour < 0 else -24)
+
+    manager.add_chat(update.message.chat_id, hour)
+
+    update.message.reply_text("Chat added")
+
+    return ConversationHandler.END
 
 
 def add_reminder(update: Update, context: CallbackContext) -> None:
-    LOCAL_TIMEZONE = datetime.datetime.now(datetime.timezone.utc).astimezone().tzinfo
     try:
-        r = reminder.Reminder(update.message.chat_id, LOCAL_TIMEZONE, context.args)
+        c = manager.get_chat(update.message.chat_id)
+        r = reminder.Reminder(update.message.chat_id, c.utc, context.args)
         manager.add_reminder(r, context)
     except RuntimeError as e:
         update.message.reply_text(str(e))
@@ -120,12 +149,12 @@ def main():
     dispatcher = updater.dispatcher
 
     # on different commands - answer in Telegram
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(CommandHandler("help", start))
+    # dispatcher.add_handler(CommandHandler("start", start))
+    # dispatcher.add_handler(CommandHandler("help", start))
     dispatcher.add_handler(CommandHandler("add", add_reminder))
     dispatcher.add_handler(CommandHandler("list", reminders_list))
 
-    conv_handler = ConversationHandler(
+    del_handler = ConversationHandler(
         entry_points=[CommandHandler('del', remove_reminder_start)],
         states={
             0: [
@@ -139,8 +168,28 @@ def main():
             remove_reminder_end
         )]
     )
+    dispatcher.add_handler(del_handler)
 
-    dispatcher.add_handler(conv_handler)
+    start_handler = ConversationHandler(
+        entry_points=[CommandHandler('start', start_begin)],
+        states={
+            0: [
+                MessageHandler(
+                    None, start_body
+                )
+            ],
+            1: [
+                MessageHandler(
+                    None, start_end
+                )
+            ]
+        },
+        fallbacks=[MessageHandler(
+            None,
+            start_body
+        )]
+    )
+    dispatcher.add_handler(start_handler)
 
     # Start the Bot
     updater.start_polling()
