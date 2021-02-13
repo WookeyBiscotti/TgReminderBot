@@ -126,10 +126,10 @@ class RemindersManager:
     def get_all_reminders(self):
         reminders = []
         cursor = self.db_connection().cursor()
-        cursor.execute('''SELECT chat_id, utc, time_form FROM Reminder''')
+        cursor.execute('''SELECT chat_id, time_form FROM Reminder''')
         for row in cursor.fetchall():
             try:
-                reminders.append(Reminder(chat_id=row[0], utc=row[1], time_form=eval(row[2])))
+                reminders.append(Reminder(chat_id=row[0], utc=self.get_chat(row[0]), time_form=eval(row[2])))
             except RuntimeError as e:
                 cursor.execute(
                     '''DELETE FROM Reminder WHERE chat_id = "{}" and time_form = "{}"'''.format(row[0], row[2]))
