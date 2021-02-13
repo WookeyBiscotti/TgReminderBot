@@ -48,8 +48,9 @@ class Reminder:
                                                                            a(self.hour), a(self.minute), a(self.second),
                                                                            a(self.day), a(self.month), a(self.year),
                                                                            datetime.datetime.fromtimestamp(
-                                                                               self.near_ts).strftime(
-                                                                               "%H:%M:%S %m.%d.%Y"))
+                                                                               self.near_ts, tz=pytz.FixedOffset(
+                                                                                   self.utc * 60)).strftime(
+                                                                               "%H:%M:%S %d.%m.%Y"))
 
     def id(self):
         return str(self.chat_id) + " ".join(self.time_form)
