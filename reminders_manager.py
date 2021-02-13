@@ -1,5 +1,6 @@
 import sqlite3
 import datetime
+import pytz
 
 from reminder import Reminder
 from migration import Migration
@@ -16,13 +17,16 @@ def remind(context: CallbackContext):
     r.update_near_ts()
     msg = "📆 {}".format(r.name)
     if r.near_ts != 0:
-        msg += " next: {}".format(datetime.datetime.fromtimestamp(r.near_ts).strftime("%H:%M:%S %m.%d.%Y"))
+        msg += " next: {}".format(
+            datetime.datetime.fromtimestamp(r.near_ts, tz=pytz.FixedOffset(r.utc * 60)).strftime("%H:%M:%S %m.%d.%Y"))
 
     context.bot.send_message(r.chat_id, text=msg)
 
     if r.near_ts != 0 and datetime.datetime.now().replace(hour=23, minute=59,
                                                           second=59).timestamp() > r.near_ts:
-        context.job_queue.run_once(remind, 1 + r.near_ts - datetime.datetime.now().timestamp(), context=r,
+        context.job_queue.run_once(remind,
+                                   1 + r.near_ts - datetime.datetime.now(tz=pytz.FixedOffset(r.utc * 60)).timestamp(),
+                                   context=r,
                                    name=r.id())
 
     m.update_reminder(r)
@@ -94,10 +98,10 @@ class RemindersManager:
         self.db_connection().commit()
         cursor.close()
 
-        if datetime.datetime.now().replace(hour=23, minute=59, second=59).timestamp() > r.near_ts:
-            context.job_queue.run_once(remind,
-                                       1 + r.near_ts - datetime.datetime.now().timestamp(), context=(self, r),
-                                       name=r.id())
+        if datetime.datetime.now(tz=pytz.FixedOffset(r.utc * 60)).replace(hour=23, minute=59,
+                                                                          second=59).timestamp() > r.near_ts:
+            context.job_queue.run_once(remind, 1 + r.near_ts - datetime.datetime.now(
+                tz=pytz.FixedOffset(r.utc * 60)).timestamp(), context=(self, r), name=r.id())
 
     def daily_update(self, context: CallbackContext):
         # TODO: optimize
@@ -108,9 +112,10 @@ class RemindersManager:
         for row in cursor.fetchall():
             try:
                 c = self.get_chat(row[0])
-                r = Reminder(chat_id=row[0], utc=c.utc, time_form=eval(row[2]))
+                r = Reminder(chat_id=row[0], utc=c.utc, time_form=eval(row[1]))
                 context.job_queue.run_once(remind,
-                                           1 + r.near_ts - datetime.datetime.now().timestamp(), context=(self, r),
+                                           1 + r.near_ts - datetime.datetime.now(
+                                               tz=pytz.FixedOffset(c.utc * 60)).timestamp(), context=(self, r),
                                            name=r.id())
             except RuntimeError as e:
                 cursor.execute(

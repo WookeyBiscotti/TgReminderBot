@@ -68,8 +68,10 @@ def start_end(update: Update, context: CallbackContext) -> int:
 
     dt = now.replace(hour=hour, minute=minute) - now
 
+    hour = dt.total_seconds() // 3600
     if (abs(dt.total_seconds()) / 60) % 60 > 30:
-        hour = dt.total_seconds() // 3600 + (-1 if dt.total_seconds() < 0 else 1)
+        hour = hour + (-1 if dt.total_seconds() < 0 else 1)
+
     if abs(hour) >= 12:
         hour = hour + (24 if hour < 0 else -24)
 
