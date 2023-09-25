@@ -143,7 +143,11 @@ struct ReminderInfo {
 		week_repeat = v.at("week_repeat").get_int_or_throw();
 		day_repeat = v.at("day_repeat").get_int_or_throw();
 
-		_id = v.at("__id").get_int_or_default(-1);
+		if (v.contains("__id")) {
+			_id = v.at("__id").get_int_or_throw();
+		} else {
+			_id = -1;
+		}
 	}
 
 	void toValue(up::value& v) const {
