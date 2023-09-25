@@ -1,0 +1,31 @@
+[submodule "3rdparty/SQLiteCpp"] 
+  path = 3rdparty/SQLiteCpp 
+  url = https://github.com/SRombauts/SQLiteCpp.git
+
+[submodule "3rdparty/date"] 
+  path = 3rdparty/date 
+  url = https://github.com/HowardHinnant/date.git
+
+[submodule "3rdparty/fmt"] 
+  path = 3rdparty/fmt 
+  url = https://github.com/fmtlib/fmt.git
+
+[submodule "3rdparty/json"] 
+  path = 3rdparty/json 
+  url = https://github.com/nlohmann/json.git
+
+[submodule "3rdparty/spdlog"] 
+  path = 3rdparty/spdlog 
+  url = https://github.com/gabime/spdlog.git
+
+[submodule "3rdparty/tgbot-cpp"] 
+  path = 3rdparty/tgbot-cpp 
+  url = https://github.com/reo7sp/tgbot-cpp.git
+
+[submodule "3rdparty/unqlite"] 
+  path = 3rdparty/unqlite
+  url = https://github.com/symisc/unqlite.git
+
+[submodule "3rdparty/unqlite_cpp"] 
+  path = 3rdparty/unqlite_cpp
+  url = https://github.com/WookeyBiscotti/unqlite_cpp.git
