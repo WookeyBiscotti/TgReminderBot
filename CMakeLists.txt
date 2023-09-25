@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.0.0)
 project(
-  ReminderBot
+  TgReminderBot
   VERSION 0.1.0
   LANGUAGES C CXX)
 
@@ -26,18 +26,18 @@ file(
   CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/src/*.[ch]pp")
 
 add_executable(
-  ReminderBot
+  TgReminderBot
   ${FIT_LOG_SOURCES} "${CMAKE_CURRENT_LIST_DIR}/3rdparty/date/src/tz.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/3rdparty/unqlite/unqlite.c")
 
-target_link_libraries(ReminderBot PUBLIC m)
+target_link_libraries(TgReminderBot PUBLIC m)
 
-target_include_directories(ReminderBot
+target_include_directories(TgReminderBot
                            PUBLIC "${CMAKE_CURRENT_LIST_DIR}/3rdparty/unqlite")
-target_include_directories(ReminderBot PUBLIC "${CMAKE_CURRENT_LIST_DIR}/src")
+target_include_directories(TgReminderBot PUBLIC "${CMAKE_CURRENT_LIST_DIR}/src")
 
 target_link_libraries(
-  ReminderBot
+  TgReminderBot
   PUBLIC TgBot
          fmt::fmt
          nlohmann_json::nlohmann_json
