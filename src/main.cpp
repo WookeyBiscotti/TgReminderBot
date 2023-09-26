@@ -25,6 +25,24 @@ using namespace TgBot;
 
 constexpr size_t MAX_MESSAGE_SIZE = 4096;
 
+TgBot::InlineKeyboardButton::Ptr makeButon(const std::string& label, const std::string& key) {
+	TgBot::InlineKeyboardButton::Ptr bt(new TgBot::InlineKeyboardButton);
+	bt->text = label;
+	bt->callbackData = key;
+
+	return bt;
+}
+
+void setButton(TgBot::InlineKeyboardMarkup::Ptr keyboard, size_t x, size_t y, TgBot::InlineKeyboardButton::Ptr btn) {
+	if (keyboard->inlineKeyboard.size() <= y) {
+		keyboard->inlineKeyboard.resize(y + 1);
+	}
+	if (keyboard->inlineKeyboard[y].size() <= x) {
+		keyboard->inlineKeyboard[y].resize(x + 1);
+	}
+	keyboard->inlineKeyboard[y][x] = btn;
+}
+
 inline std::string findToken() {
 	std::string token;
 	std::ifstream tokenFile("token");
@@ -462,7 +480,7 @@ int main(int, char**) {
 
 	ReminderQuery q(bot);
 
-	bot.getEvents().onCommand("start", [&](TgBot::Message::Ptr msg) {
+	auto start = [&](TgBot::Message::Ptr msg) {
 		try {
 			if (!msg->chat) {
 				std::cerr << "Невозможно переслать сообщение" << std::endl;
@@ -491,9 +509,8 @@ int main(int, char**) {
 
 			bot.getApi().sendMessage(msg->chat->id, "Здравствуйте, вы зарегестрированны.");
 		} catch (const std::exception& e) { std::cerr << e.what(); }
-	});
-
-	bot.getEvents().onCommand("add", [&](TgBot::Message::Ptr msg) {
+	};
+	auto add = [&](TgBot::Message::Ptr msg) {
 		try {
 			if (!msg->chat) {
 				std::cerr << "Невозможно переслать сообщение" << std::endl;
@@ -543,9 +560,8 @@ int main(int, char**) {
 			    fmt::format("✅🗓️ Напоминание добавленно.\n{}\nСледующее срабатывание: {}", ri.pretty(),
 			        prettyDateTime(nextTp)));
 		} catch (const std::exception& e) { std::cerr << e.what(); }
-	});
-
-	bot.getEvents().onCommand("list", [&](TgBot::Message::Ptr msg) {
+	};
+	auto list = [&](TgBot::Message::Ptr msg) {
 		try {
 			if (!msg->chat) {
 				std::cerr << "Невозможно переслать сообщение" << std::endl;
@@ -603,9 +619,8 @@ int main(int, char**) {
 			bot.getApi().sendMessage(msg->chat->id,
 			    fmt::format("🗓️ Список напоминаний({}-{})/{}:\n{}", start, end, value.size(), outMsg));
 		} catch (const std::exception& e) { std::cerr << e.what(); }
-	});
-
-	bot.getEvents().onCommand("del", [&](TgBot::Message::Ptr msg) {
+	};
+	auto del = [&](TgBot::Message::Ptr msg) {
 		try {
 			if (!msg->chat) {
 				std::cerr << "Невозможно переслать сообщение" << std::endl;
@@ -646,6 +661,99 @@ int main(int, char**) {
 				bot.getApi().sendMessage(msg->chat->id, "❌ Напоминания не существует.");
 			}
 		} catch (const std::exception& e) { std::cerr << e.what(); }
+	};
+	auto deli = [&](TgBot::Message::Ptr msg) {
+		try {
+			if (!msg->chat) {
+				std::cerr << "Невозможно переслать сообщение" << std::endl;
+				return;
+			}
+
+			if (!msg->from) {
+				bot.getApi().sendMessage(msg->chat->id, "⚠️ Несуществующий пользователь!");
+				return;
+			}
+
+			std::int64_t userId = msg->from->id;
+			std::int64_t chatId = msg->chat->id;
+
+			if (!isChatRegistered(db, chatId)) {
+				bot.getApi().sendMessage(chatId, "⚠️ Бот еще не зарегестрирован в этом чате!(/start)");
+				return;
+			}
+
+			std::vector<std::string> args;
+			boost::split(args, msg->text, [](char c) { return c == ' ' || c == '\n' || c == '\t'; });
+
+			if (args.size() > 2) {
+				bot.getApi().sendMessage(chatId, "⚠️ Неверное колличество аргументов!");
+				return;
+			}
+
+			int page = 1;
+			if (args.size() == 2)
+				try {
+					page = std::stoi(args.back());
+				} catch (const std::exception& e) {
+					bot.getApi().sendMessage(msg->chat->id, "⚠️ Неверный формат листов!");
+					return;
+				}
+
+			auto collection = fmt::format("reminders_{}", chatId);
+			up::value value;
+			value = up::vm_fetch_all_records(db).fetch_value_or_throw(collection);
+
+			std::string outMsg;
+			if (!value.is_array() || value.size() == 0) {
+				bot.getApi().sendMessage(msg->chat->id, "⚠️ Еще нет напоминаний.");
+				return;
+			}
+			auto start = std::max<int>(0, (page - 1) * 10);
+			auto end = std::min<int>(value.size(), page * 10);
+
+			auto keyboard = std::make_shared<TgBot::InlineKeyboardMarkup>();
+
+			for (int i = start; i != end; ++i) {
+				ReminderInfo ri;
+				ri.fromValue(value.at(i));
+				setButton(keyboard, 0, i - start,
+				    makeButon(fmt::format("❌ {}", ri.toString()), fmt::format("/del {}", ri._id)));
+			}
+			if (end - start < value.size()) {
+				if (start > 0 && end < value.size()) {
+					setButton(keyboard, 0, end - start, makeButon("<", fmt::format("/deli {}", page - 1)));
+					setButton(keyboard, 1, end - start, makeButon(">", fmt::format("/deli {}", page + 1)));
+				} else if (start > 0) {
+					setButton(keyboard, 0, end - start, makeButon("<", fmt::format("/deli {}", page - 1)));
+				} else if (end < value.size()) {
+					setButton(keyboard, 0, end - start, makeButon(">", fmt::format("/deli {}", page + 1)));
+				}
+			}
+
+			bot.getApi().sendMessage(msg->chat->id,
+			    fmt::format("❓ Какое напоминание удалить?", start, end, value.size(), outMsg), false, 0, keyboard);
+		} catch (const std::exception& e) { std::cerr << e.what(); }
+	};
+
+	bot.getEvents().onCommand("start", start);
+	bot.getEvents().onCommand("list", list);
+	bot.getEvents().onCommand("add", add);
+	bot.getEvents().onCommand("del", del);
+	bot.getEvents().onCommand("deli", deli);
+
+	bot.getEvents().onCallbackQuery([&](CallbackQuery::Ptr query) {
+		query->message->text = query->data;
+
+		std::vector<std::string> args;
+		boost::split(args, query->data, [](char c) { return c == ' ' || c == '\n' || c == '\t'; });
+		if (args.empty()) {
+			return;
+		}
+		if (args.front() == "/del") {
+			del(query->message);
+		} else if (args.front() == "/deli") {
+			deli(query->message);
+		}
 	});
 
 	auto localTp = now();
