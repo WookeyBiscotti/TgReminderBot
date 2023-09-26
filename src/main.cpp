@@ -295,7 +295,6 @@ struct ReminderInfo {
 				remTp = toTp(remTime, remDate);
 			}
 
-			return remTp;
 		} else if (month_repeat) {
 			if (remTp > currTp) {
 				return remTp;
@@ -308,14 +307,12 @@ struct ReminderInfo {
 				remTp = toTp(remTime, remDate);
 			}
 
-			return remTp;
 		} else if (day_repeat != 0) {
 			while (remTp < currTp) {
 				remDate = date::sys_days{remDate} + date::days{day_repeat};
 				remTp = toTp(remTime, remDate);
 			}
 
-			return remTp;
 		} else if (week_repeat != 0) {
 			auto wa = bitWeekToArray(week_repeat);
 			auto weekIndex = [](const time_point<seconds>& tp) {
@@ -328,16 +325,13 @@ struct ReminderInfo {
 			if (remTp < currTp) {
 				remTp = currTp;
 			}
-			auto i = weekIndex(remTp);
 			while (!wa[weekIndex(remTp)] || remTp <= currTp) {
 				remDate = date::sys_days{remDate} + date::days{1};
 				remTp = toTp(remTime, remDate);
 			}
-
-			return remTp;
-		} else {
-			return remTp;
 		}
+
+		return remTp;
 	}
 
 	bool isRepeatable() const { return year_repeat || month_repeat || week_repeat || day_repeat; }
@@ -396,7 +390,8 @@ class ReminderQuery {
 				if (r.reminder.isRepeatable()) {
 					nextRing = fmt::format("\nСледующее напоминание:\n{}", prettyDateTime(r.nextTp));
 				}
-				_bot.getApi().sendMessage(r.chatId, fmt::format("⌚ Напоминание:\n{}{}", r.reminder.pretty(), nextRing));
+				_bot.getApi().sendMessage(r.chatId, fmt::format("⏰ Напоминание ⏰\n*{}*{}", r.reminder.pretty(), nextRing),
+				    false, 0, nullptr, "MarkdownV2");
 			}
 			ringNow.clear();
 
