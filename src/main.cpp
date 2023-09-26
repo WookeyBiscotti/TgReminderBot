@@ -390,8 +390,9 @@ class ReminderQuery {
 				if (r.reminder.isRepeatable()) {
 					nextRing = fmt::format("\nСледующее напоминание:\n{}", prettyDateTime(r.nextTp));
 				}
-				_bot.getApi().sendMessage(r.chatId, fmt::format("⏰ Напоминание ⏰\n*{}*{}", r.reminder.pretty(), nextRing),
-				    false, 0, nullptr, "MarkdownV2");
+				_bot.getApi().sendMessage(r.chatId,
+				    fmt::format("⏰ Напоминание ⏰\n*{}*{}", r.reminder.pretty(), nextRing), false, 0, nullptr,
+				    "MarkdownV2");
 			}
 			ringNow.clear();
 
@@ -573,11 +574,12 @@ int main(int, char**) {
 			for (int i = start; i != end; ++i) {
 				ReminderInfo ri;
 				ri.fromValue(value.at(i));
-				outMsg += fmt::format("{}: {}\n", ri._id, ri.toString());
+				outMsg += fmt::format("*{}*: _{}_\n", ri._id, ri.toString());
 			}
 
 			bot.getApi().sendMessage(msg->chat->id,
-			    fmt::format("🗓️ Список напоминаний:({}-{})/{}\n{}", start, end, value.size(), outMsg));
+			    fmt::format("🗓️ Список напоминаний({}-{})/{}:\n{}", start, end, value.size(), outMsg), false, 0, nullptr,
+			    "MarkdownV2");
 		} catch (const std::exception& e) { std::cerr << e.what(); }
 	});
 
