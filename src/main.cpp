@@ -36,9 +36,9 @@ inline std::string findToken() {
 	return token;
 }
 
-bool eraseReminder(up::db& db, std::int64_t userId, std::int64_t recId) {
+bool eraseReminder(up::db& db, std::int64_t chatId, std::int64_t recId) {
 	auto vm = db.compile_or_throw("$result = db_drop_record($c, $recId);");
-	std::string collection = fmt::format("reminders_{}", userId);
+	std::string collection = fmt::format("reminders_{}", chatId);
 	vm.bind_or_throw("c", collection);
 	vm.bind_or_throw("recId", recId);
 	vm.exec_or_throw();
@@ -143,11 +143,7 @@ struct ReminderInfo {
 		week_repeat = v.at("week_repeat").get_int_or_throw();
 		day_repeat = v.at("day_repeat").get_int_or_throw();
 
-		if (v.contains("__id")) {
-			_id = v.at("__id").get_int_or_throw();
-		} else {
-			_id = -1;
-		}
+		_id = v.at("__id").get_int_or_default(-1);
 	}
 
 	void toValue(up::value& v) const {
@@ -407,8 +403,8 @@ class ReminderQuery {
 	std::unordered_map<std::int64_t /*chatId*/, std::multimap<time_point<seconds>, ReminderInfo>> _order;
 };
 
-std::vector<ReminderInfo> loadReminders(up::db& db, std::int64_t userId) {
-	auto collection = fmt::format("reminders_{}", userId);
+std::vector<ReminderInfo> loadReminders(up::db& db, std::int64_t chatId) {
+	auto collection = fmt::format("reminders_{}", chatId);
 	up::value value = up::vm_fetch_all_records(db).fetch_value_or_throw(collection);
 
 	if (!value.is_array() || value.size() == 0) {
@@ -432,7 +428,7 @@ struct UserChat {
 	std::int64_t userId;
 	std::int64_t chatId;
 };
-std::vector<UserChat> loadUsers(up::db& db) {
+std::vector<UserChat> loadUserChats(up::db& db) {
 	up::value value = up::vm_fetch_all_records(db).fetch_value_or_throw("users");
 
 	if (!value.is_array() || value.size() == 0) {
@@ -475,6 +471,14 @@ int main(int, char**) {
 			}
 
 			std::int64_t userId = msg->from->id;
+			std::int64_t chatId = msg->chat->id;
+
+			auto collection = fmt::format("reminders_{}", chatId);
+			if (up::vm_collection_exist(db).exist(collection)) {
+				bot.getApi().sendMessage(msg->chat->id, "⚠️ Бот уже существует в этом чате!");
+				return;
+			}
+
 			up::vm_store_record(db).store_or_throw("users",
 			    up::value::object{{"id", userId}, {"chat_id", msg->chat->id}});
 
@@ -495,6 +499,7 @@ int main(int, char**) {
 			}
 
 			std::int64_t userId = msg->from->id;
+			std::int64_t chatId = msg->chat->id;
 
 			std::string error;
 			ReminderInfo ri;
@@ -518,7 +523,7 @@ int main(int, char**) {
 				return;
 			}
 
-			auto collection = fmt::format("reminders_{}", userId);
+			auto collection = fmt::format("reminders_{}", chatId);
 			up::vm_store_record(db).store_or_throw(collection, v);
 			q.addTimer(msg->chat->id, nextTp, ri);
 
@@ -549,6 +554,7 @@ int main(int, char**) {
 			}
 
 			std::int64_t userId = msg->from->id;
+			std::int64_t chatId = msg->chat->id;
 
 			int page = 1;
 			if (args.size() == 2)
@@ -559,7 +565,7 @@ int main(int, char**) {
 					return;
 				}
 
-			auto collection = fmt::format("reminders_{}", userId);
+			auto collection = fmt::format("reminders_{}", chatId);
 			up::value value;
 			value = up::vm_fetch_all_records(db).fetch_value_or_throw(collection);
 
@@ -596,6 +602,7 @@ int main(int, char**) {
 			}
 
 			auto userId = msg->from->id;
+			auto chatId = msg->chat->id;
 
 			std::vector<std::string> args;
 			boost::split(args, msg->text, [](char c) { return c == ' ' || c == '\n' || c == '\t'; });
@@ -611,8 +618,8 @@ int main(int, char**) {
 				bot.getApi().sendMessage(msg->chat->id, "⚠️ Неверный формат id!");
 				return;
 			}
-			if (eraseReminder(db, userId, recId)) {
-				q.removeTimer(msg->chat->id, recId);
+			if (eraseReminder(db, chatId, recId)) {
+				q.removeTimer(chatId, recId);
 				bot.getApi().sendMessage(msg->chat->id, "✅ Напоминание удаленно.");
 			} else {
 				bot.getApi().sendMessage(msg->chat->id, "❌ Напоминания не существует.");
@@ -622,9 +629,9 @@ int main(int, char**) {
 
 	auto localTp = now();
 
-	auto usersChats = loadUsers(db);
+	auto usersChats = loadUserChats(db);
 	for (const auto& uc : usersChats) {
-		auto rms = loadReminders(db, uc.userId);
+		auto rms = loadReminders(db, uc.chatId);
 		for (const auto& r : rms) {
 			auto nextTp = r.getNearTs(localTp);
 			if (nextTp > localTp) {
