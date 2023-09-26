@@ -445,6 +445,11 @@ std::vector<UserChat> loadUserChats(up::db& db) {
 	return res;
 }
 
+bool isChatRegistered(up::db& db, std::int64_t chatId) {
+	auto collection = fmt::format("reminders_{}", chatId);
+	return up::vm_collection_exist(db).exist(collection);
+}
+
 int main(int, char**) {
 	signal(SIGINT, [](int s) {
 		printf("SIGINT got\n");
@@ -473,9 +478,8 @@ int main(int, char**) {
 			std::int64_t userId = msg->from->id;
 			std::int64_t chatId = msg->chat->id;
 
-			auto collection = fmt::format("reminders_{}", chatId);
-			if (up::vm_collection_exist(db).exist(collection)) {
-				bot.getApi().sendMessage(msg->chat->id, "⚠️ Бот уже существует в этом чате!");
+			if (isChatRegistered(db, chatId)) {
+				bot.getApi().sendMessage(chatId, "⚠️ Бот уже существует в этом чате!");
 				return;
 			}
 
@@ -500,6 +504,11 @@ int main(int, char**) {
 
 			std::int64_t userId = msg->from->id;
 			std::int64_t chatId = msg->chat->id;
+
+			if (!isChatRegistered(db, chatId)) {
+				bot.getApi().sendMessage(chatId, "⚠️ Бот еще не зарегестрирован в этом чате!(/start)");
+				return;
+			}
 
 			std::string error;
 			ReminderInfo ri;
@@ -545,16 +554,21 @@ int main(int, char**) {
 				return;
 			}
 
+			std::int64_t userId = msg->from->id;
+			std::int64_t chatId = msg->chat->id;
+
+			if (!isChatRegistered(db, chatId)) {
+				bot.getApi().sendMessage(chatId, "⚠️ Бот еще не зарегестрирован в этом чате!(/start)");
+				return;
+			}
+
 			std::vector<std::string> args;
 			boost::split(args, msg->text, [](char c) { return c == ' ' || c == '\n' || c == '\t'; });
 
 			if (args.size() > 2) {
-				bot.getApi().sendMessage(msg->chat->id, "⚠️ Неверное колличество аргументов!");
+				bot.getApi().sendMessage(chatId, "⚠️ Неверное колличество аргументов!");
 				return;
 			}
-
-			std::int64_t userId = msg->from->id;
-			std::int64_t chatId = msg->chat->id;
 
 			int page = 1;
 			if (args.size() == 2)
@@ -603,6 +617,11 @@ int main(int, char**) {
 
 			auto userId = msg->from->id;
 			auto chatId = msg->chat->id;
+
+			if (!isChatRegistered(db, chatId)) {
+				bot.getApi().sendMessage(chatId, "⚠️ Бот еще не зарегестрирован в этом чате!(/start)");
+				return;
+			}
 
 			std::vector<std::string> args;
 			boost::split(args, msg->text, [](char c) { return c == ' ' || c == '\n' || c == '\t'; });
