@@ -482,6 +482,10 @@ int main(int, char**) {
 				return;
 			}
 
+			auto collection = fmt::format("reminders_{}", chatId);
+			db.compile_or_throw("db_create($col);").bind_or_throw("col", collection).exec_or_throw();
+			db.commit_or_throw();
+
 			up::vm_store_record(db).store_or_throw("users",
 			    up::value::object{{"id", userId}, {"chat_id", msg->chat->id}});
 
