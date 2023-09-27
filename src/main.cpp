@@ -620,7 +620,7 @@ int main(int, char**) {
 			    fmt::format("🗓️ Список напоминаний({}-{})/{}:\n{}", start, end, value.size(), outMsg));
 		} catch (const std::exception& e) { std::cerr << e.what(); }
 	};
-	auto del = [&](TgBot::Message::Ptr msg) {
+	auto del = [&](TgBot::Message::Ptr msg, bool allowMsgs) {
 		try {
 			if (!msg->chat) {
 				std::cerr << "Невозможно переслать сообщение" << std::endl;
@@ -628,7 +628,9 @@ int main(int, char**) {
 			}
 
 			if (!msg->from) {
-				bot.getApi().sendMessage(msg->chat->id, "⚠️ Несуществующий пользователь!");
+				if (allowMsgs) {
+					bot.getApi().sendMessage(msg->chat->id, "⚠️ Несуществующий пользователь!");
+				}
 				return;
 			}
 
@@ -636,7 +638,9 @@ int main(int, char**) {
 			auto chatId = msg->chat->id;
 
 			if (!isChatRegistered(db, chatId)) {
-				bot.getApi().sendMessage(chatId, "⚠️ Бот еще не зарегестрирован в этом чате!(/start)");
+				if (allowMsgs) {
+					bot.getApi().sendMessage(chatId, "⚠️ Бот еще не зарегестрирован в этом чате!(/start)");
+				}
 				return;
 			}
 
@@ -651,14 +655,20 @@ int main(int, char**) {
 			try {
 				recId = std::stoi(args.back());
 			} catch (const std::exception& e) {
-				bot.getApi().sendMessage(msg->chat->id, "⚠️ Неверный формат id!");
+				if (allowMsgs) {
+					bot.getApi().sendMessage(msg->chat->id, "⚠️ Неверный формат id!");
+				}
 				return;
 			}
 			if (eraseReminder(db, chatId, recId)) {
 				q.removeTimer(chatId, recId);
-				bot.getApi().sendMessage(msg->chat->id, "✅ Напоминание удаленно.");
+				if (allowMsgs) {
+					bot.getApi().sendMessage(msg->chat->id, "✅ Напоминание удаленно.");
+				}
 			} else {
-				bot.getApi().sendMessage(msg->chat->id, "❌ Напоминания не существует.");
+				if (allowMsgs) {
+					bot.getApi().sendMessage(msg->chat->id, "❌ Напоминания не существует.");
+				}
 			}
 		} catch (const std::exception& e) { std::cerr << e.what(); }
 	};
@@ -717,7 +727,7 @@ int main(int, char**) {
 				ReminderInfo ri;
 				ri.fromValue(value.at(i));
 				setButton(keyboard, 0, i - start,
-				    makeButon(fmt::format("❌ {}", ri.toString()), fmt::format("/del {}", ri._id)));
+				    makeButon(fmt::format("{}", ri.toString()), fmt::format("/del {}", ri._id)));
 			}
 			if (end - start < value.size()) {
 				if (start > 0 && end < value.size()) {
@@ -731,14 +741,14 @@ int main(int, char**) {
 			}
 
 			bot.getApi().sendMessage(msg->chat->id,
-			    fmt::format("❓ Какое напоминание удалить?", start, end, value.size(), outMsg), false, 0, keyboard);
+			    fmt::format("🗑️ Какое напоминание удалить❓", start, end, value.size(), outMsg), false, 0, keyboard);
 		} catch (const std::exception& e) { std::cerr << e.what(); }
 	};
 
 	bot.getEvents().onCommand("start", start);
 	bot.getEvents().onCommand("list", list);
 	bot.getEvents().onCommand("add", add);
-	bot.getEvents().onCommand("del", del);
+	bot.getEvents().onCommand("del", [&](auto q) { del(q, true); });
 	bot.getEvents().onCommand("deli", deli);
 
 	bot.getEvents().onCallbackQuery([&](CallbackQuery::Ptr query) {
@@ -750,7 +760,7 @@ int main(int, char**) {
 			return;
 		}
 		if (args.front() == "/del") {
-			del(query->message);
+			del(query->message, false);
 		} else if (args.front() == "/deli") {
 			deli(query->message);
 		}
@@ -788,6 +798,11 @@ int main(int, char**) {
 	cmdArray = BotCommand::Ptr(new BotCommand);
 	cmdArray->command = "del";
 	cmdArray->description = "Удаление напоминания по id. /del [id]";
+	commands.push_back(cmdArray);
+
+	cmdArray = BotCommand::Ptr(new BotCommand);
+	cmdArray->command = "deli";
+	cmdArray->description = "Интерактивное удаление напоминания. /deli";
 	commands.push_back(cmdArray);
 
 	// cmdArray = BotCommand::Ptr(new BotCommand);
