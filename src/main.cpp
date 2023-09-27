@@ -672,7 +672,7 @@ int main(int, char**) {
 			}
 		} catch (const std::exception& e) { std::cerr << e.what(); }
 	};
-	auto deli = [&](TgBot::Message::Ptr msg) {
+	auto deli = [&](TgBot::Message::Ptr msg, std::int64_t messageId) {
 		try {
 			if (!msg->chat) {
 				std::cerr << "Невозможно переслать сообщение" << std::endl;
@@ -701,9 +701,9 @@ int main(int, char**) {
 			}
 
 			int page = 1;
-			if (args.size() == 2)
+			if (args.size() > 1)
 				try {
-					page = std::stoi(args.back());
+					page = std::stoi(args[1]);
 				} catch (const std::exception& e) {
 					bot.getApi().sendMessage(msg->chat->id, "⚠️ Неверный формат листов!");
 					return;
@@ -713,13 +713,17 @@ int main(int, char**) {
 			up::value value;
 			value = up::vm_fetch_all_records(db).fetch_value_or_throw(collection);
 
+			constexpr int PAGE_SIZE = 10;
+
 			std::string outMsg;
 			if (!value.is_array() || value.size() == 0) {
 				bot.getApi().sendMessage(msg->chat->id, "⚠️ Еще нет напоминаний.");
 				return;
 			}
-			auto start = std::max<int>(0, (page - 1) * 10);
-			auto end = std::min<int>(value.size(), page * 10);
+			page = std::min<int>(page, (value.size() / PAGE_SIZE) + 1);
+
+			auto start = std::max<int>(0, (page - 1) * PAGE_SIZE);
+			auto end = std::min<int>(value.size(), page * PAGE_SIZE);
 
 			auto keyboard = std::make_shared<TgBot::InlineKeyboardMarkup>();
 
@@ -739,9 +743,17 @@ int main(int, char**) {
 					setButton(keyboard, 0, end - start, makeButon(">", fmt::format("/deli {}", page + 1)));
 				}
 			}
+			setButton(keyboard, 0, keyboard->inlineKeyboard.size(),
+			    makeButon("Отмена", fmt::format("/delete_last_msg")));
 
-			bot.getApi().sendMessage(msg->chat->id,
-			    fmt::format("🗑️ Какое напоминание удалить❓", start, end, value.size(), outMsg), false, 0, keyboard);
+			if (messageId == 0) {
+				bot.getApi().sendMessage(chatId,
+				    fmt::format("🗑️ Какое напоминание удалить❓", start, end, value.size(), outMsg), false, 0, keyboard);
+			} else {
+				bot.getApi().editMessageText(
+				    fmt::format("🗑️ Какое напоминание удалить❓", start, end, value.size(), outMsg), chatId, messageId,
+				    "", "", false, keyboard);
+			}
 		} catch (const std::exception& e) { std::cerr << e.what(); }
 	};
 
@@ -749,20 +761,23 @@ int main(int, char**) {
 	bot.getEvents().onCommand("list", list);
 	bot.getEvents().onCommand("add", add);
 	bot.getEvents().onCommand("del", [&](auto q) { del(q, true); });
-	bot.getEvents().onCommand("deli", deli);
+	bot.getEvents().onCommand("deli", [&](auto q) { deli(q, 0); });
 
 	bot.getEvents().onCallbackQuery([&](CallbackQuery::Ptr query) {
 		query->message->text = query->data;
 
 		std::vector<std::string> args;
 		boost::split(args, query->data, [](char c) { return c == ' ' || c == '\n' || c == '\t'; });
-		if (args.empty()) {
+		if (args.empty() || !query->message || !query->message->chat) {
 			return;
 		}
 		if (args.front() == "/del") {
 			del(query->message, false);
+			deli(query->message, query->message->messageId);
 		} else if (args.front() == "/deli") {
-			deli(query->message);
+			deli(query->message, query->message->messageId);
+		} else if (args.front() == "/delete_last_msg") {
+			bot.getApi().deleteMessage(query->message->chat->id, query->message->messageId);
 		}
 	});
 
