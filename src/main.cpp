@@ -465,6 +465,7 @@ class ReminderQuery {
 	void addTimer(std::int64_t chatId, time_point<seconds> tp, const ReminderInfo& reminder) {
 		std::scoped_lock l(_m);
 		_order[chatId].emplace(tp, reminder);
+		_cond.notify_all();
 	}
 
 	void removeTimer(std::int64_t chatId, std::int64_t reminderId) {
@@ -477,6 +478,13 @@ class ReminderQuery {
 				it = rms.erase(it);
 			}
 		}
+		_cond.notify_all();
+	}
+
+	void stop() {
+		std::scoped_lock l(_m);
+		_running = false;
+		_cond.notify_all();
 	}
 
 	void run() {
@@ -487,11 +495,13 @@ class ReminderQuery {
 		};
 		std::vector<RingInfo> ringNow;
 
-		while (true) {
-			auto localTp = now();
+		std::unique_lock lk(_m);
+		_running = true;
 
+		while (_running) {
+			auto localTp = now();
+			auto nextTpWakeUp = localTp + date::years(1);
 			for (auto& [chatId, reminders] : _order) {
-				std::scoped_lock l(_m);
 				for (auto it = reminders.begin(); it != reminders.end();) {
 					if (it->first < localTp) {
 						ringNow.push_back({chatId, it->second});
@@ -502,6 +512,9 @@ class ReminderQuery {
 							reminders.emplace(r.nextTp, r.reminder);
 						}
 					} else {
+						if (it->first < nextTpWakeUp) {
+							nextTpWakeUp = it->first;
+						}
 						break;
 					}
 				}
@@ -517,12 +530,14 @@ class ReminderQuery {
 			}
 			ringNow.clear();
 
-			std::this_thread::sleep_for(seconds(10));
+			_cond.wait_for(lk, nextTpWakeUp - now());
 		}
 	}
 
   private:
 	mutable std::mutex _m;
+	mutable std::condition_variable _cond;
+	std::atomic_bool _running;
 
 	Bot& _bot;
 	std::unordered_map<std::int64_t /*chatId*/, std::multimap<time_point<seconds>, ReminderInfo>> _order;
@@ -963,9 +978,9 @@ int main(int, char**) {
 
 	std::thread t([&q] { q.run(); });
 	TgLongPoll longPoll(bot);
+	printf("Start bot.\n");
 	while (true) {
 		try {
-			printf("Long poll started\n");
 			longPoll.start();
 		} catch (const std::exception& e) { printf("error: %s\n", e.what()); }
 	}
