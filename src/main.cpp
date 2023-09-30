@@ -74,11 +74,97 @@ std::string prettyDateTime(time_point<seconds> localTp) {
 	    static_cast<unsigned>(ymd.day()), static_cast<unsigned>(ymd.month()), static_cast<int>(ymd.year()));
 }
 
+std::string dateTimeToQueryFormat(date::year_month_day ymd, date::time_of_day<minutes> tod) {
+	return fmt::format("{}/{}_{}/{}/{}", tod.hours().count(), tod.minutes().count(), static_cast<unsigned>(ymd.day()),
+	    static_cast<unsigned>(ymd.month()), static_cast<int>(ymd.year()));
+}
+
+auto queryFormatToDateTime(std::string cmd) {
+	std::vector<std::string> args;
+	boost::split(args, cmd, [](char c) { return c == '_'; });
+
+	auto tod = [](auto& ts) {
+		std::vector<std::string> args;
+		boost::split(args, ts, [](char c) { return c == '/'; });
+
+		return date::time_of_day<minutes>(minutes(std::stoi(args.at(0)) * 60 + std::stoi(args.at(1))));
+	}(args.at(0));
+
+	auto ymd = [](auto& ts) {
+		std::vector<std::string> args;
+		boost::split(args, ts, [](char c) { return c == '/'; });
+
+		return date::year_month_day(date::day(std::stoi(args.at(0))) / std::stoi(args.at(1)) / std::stoi(args.at(2)));
+	}(args.at(1));
+
+	return std::make_pair(ymd, tod);
+}
+
 time_point<seconds> now() {
 	static auto zone = date::locate_zone("Europe/Moscow");
 
 	return time_point<seconds>(
 	    duration_cast<seconds>(date::make_zoned(zone, system_clock::now()).get_local_time().time_since_epoch()));
+}
+
+TgBot::InlineKeyboardMarkup::Ptr makeAddIKeyboard(time_point<seconds> localTp) {
+	date::year_month_day ymd{date::sys_days{date::floor<date::days>(localTp.time_since_epoch())}};
+	date::time_of_day<minutes> tod{
+	    date::floor<minutes>(localTp.time_since_epoch() - date::sys_days{ymd}.time_since_epoch())};
+
+	std::stringstream monthName;
+	monthName << ymd.month();
+
+	std::stringstream yearName;
+	yearName << ymd.year();
+
+	auto k = std::make_shared<TgBot::InlineKeyboardMarkup>();
+	// setButton(k, 0, 0, makeButon("-10", fmt::format("/addi {}", dateTimeToQueryFormat(ymd - date::years(10), tod))));
+	// setButton(k, 1, 0, makeButon("-5", fmt::format("/addi {}", dateTimeToQueryFormat(ymd - date::years(5), tod))));
+	// setButton(k, 2, 0, makeButon("-1", fmt::format("/addi {}", dateTimeToQueryFormat(ymd - date::years(1), tod))));
+	// setButton(k, 3, 0, makeButon(yearName.str(), "_"));
+	// setButton(k, 4, 0, makeButon("+1", fmt::format("/addi {}", dateTimeToQueryFormat(ymd + date::years(1), tod))));
+	// setButton(k, 5, 0, makeButon("+5", fmt::format("/addi {}", dateTimeToQueryFormat(ymd + date::years(5), tod))));
+	// setButton(k, 6, 0, makeButon("+10", fmt::format("/addi {}", dateTimeToQueryFormat(ymd + date::years(10), tod))));
+
+	setButton(k, 0, 0, makeButon("-6", fmt::format("/addi {}", dateTimeToQueryFormat(ymd - date::months(6), tod))));
+	setButton(k, 1, 0, makeButon("-1", fmt::format("/addi {}", dateTimeToQueryFormat(ymd - date::months(1), tod))));
+	setButton(k, 2, 0, makeButon(monthName.str(), "_"));
+	setButton(k, 3, 0, makeButon("+1", fmt::format("/addi {}", dateTimeToQueryFormat(ymd + date::months(1), tod))));
+	setButton(k, 4, 0, makeButon("+5", fmt::format("/addi {}", dateTimeToQueryFormat(ymd + date::months(6), tod))));
+
+	setButton(k, 0, 1, makeButon("Пн", "_"));
+	setButton(k, 1, 1, makeButon("Вт", "_"));
+	setButton(k, 2, 1, makeButon("Ср", "_"));
+	setButton(k, 3, 1, makeButon("Чт", "_"));
+	setButton(k, 4, 1, makeButon("Пт", "_"));
+	setButton(k, 5, 1, makeButon("Сб", "_"));
+	setButton(k, 6, 1, makeButon("Вс", "_"));
+
+	int todayDay = static_cast<unsigned>(ymd.day());
+	int lastDay = static_cast<unsigned>(date::year_month_day_last(ymd.year(), date::month_day_last(ymd.month())).day());
+	int firstWeekDay = date::year_month_weekday(date::day(1) / ymd.month() / ymd.year()).weekday().iso_encoding() - 1;
+	int currDay = 0;
+
+	for (int i = 0; i != 50; ++i) {
+		int x = i % 7;
+		int y = i / 7;
+		if (i >= firstWeekDay && currDay < lastDay) {
+			setButton(k, x, y + 2,
+			    makeButon(currDay + 1 == todayDay ? fmt::format("|{}|", currDay + 1) : std::to_string(currDay + 1),
+			        fmt::format("/addi {}",
+			            dateTimeToQueryFormat(date::year_month_day(date::day(currDay + 1) / ymd.month() / ymd.year()),
+			                tod))));
+			currDay++;
+		} else {
+			setButton(k, x, y + 2, makeButon(" ", "_"));
+			if (x == 6) {
+				break;
+			}
+		}
+	}
+
+	return k;
 }
 
 struct ReminderInfo {
@@ -94,7 +180,7 @@ struct ReminderInfo {
 	std::int64_t minute = -1;
 
 	bool year_repeat = false;
-	bool month_repeat = false;
+	std::int64_t month_repeat = 0;
 	std::int64_t week_repeat = 0; // bit schema here
 	std::int64_t day_repeat = 0;
 
@@ -104,10 +190,23 @@ struct ReminderInfo {
 		std::string repeatInfo;
 		if (year_repeat) {
 			repeatInfo = "\nПовтор ежегодно.";
-		} else if (month_repeat) {
+		} else if (month_repeat != 0) {
 			repeatInfo = "\nПовтор ежемесячно.";
-		} else if (day_repeat) {
-			repeatInfo = "\nПовтор ежедневно.";
+			if (month_repeat == 1) {
+				repeatInfo = "\nПовтор ежемесячно.";
+			} else if (month_repeat < 5) {
+				repeatInfo = fmt::format("\nПовтор каждые {} месяца.", month_repeat);
+			} else {
+				repeatInfo = fmt::format("\nПовтор каждые {} месяцев.", month_repeat);
+			}
+		} else if (day_repeat != 0) {
+			if (day_repeat == 1) {
+				repeatInfo = "\nПовтор ежедневно.";
+			} else if (day_repeat < 5) {
+				repeatInfo = fmt::format("\nПовтор каждые {} дня.", day_repeat);
+			} else {
+				repeatInfo = fmt::format("\nПовтор каждые {} дней.", day_repeat);
+			}
 		} else if (week_repeat != 0) {
 			repeatInfo = "\nПовтор по:";
 			const char* days[7] = {" Пн,", " Вт,", " Ср,", " Чт,", " Пт,", " Сб,", " Вс,"};
@@ -126,8 +225,9 @@ struct ReminderInfo {
 		std::string repeatInfo;
 		if (year_repeat) {
 			repeatInfo = 'y';
-		} else if (month_repeat) {
+		} else if (month_repeat != 0) {
 			repeatInfo = 'm';
+			repeatInfo += std::to_string(month_repeat);
 		} else if (day_repeat != 0) {
 			repeatInfo = 'd';
 			repeatInfo += std::to_string(day_repeat);
@@ -157,7 +257,11 @@ struct ReminderInfo {
 		minute = v.at("minute").get_int_or_throw();
 
 		year_repeat = v.at("year_repeat").get_bool_or_throw();
-		month_repeat = v.at("month_repeat").get_bool_or_throw();
+		if (v.at("month_repeat").is_bool()) {
+			month_repeat = v.at("month_repeat").get_bool_or_throw();
+		} else {
+			month_repeat = v.at("month_repeat").get_int_or_throw();
+		}
 		week_repeat = v.at("week_repeat").get_int_or_throw();
 		day_repeat = v.at("day_repeat").get_int_or_throw();
 
@@ -237,10 +341,17 @@ struct ReminderInfo {
 			if (c == 'y') {
 				year_repeat = true;
 			} else if (c == 'm') {
-				month_repeat = true;
-			} else if (c == 'd') {
+				auto numStr = args.front().substr(1);
 				try {
-					day_repeat = std::stoi(args.front().substr(1));
+					month_repeat = numStr.empty() ? 1 : std::stoi(numStr);
+				} catch (const std::exception& e) {
+					error += "⚠️ Неверный формат дней!";
+					return false;
+				}
+			} else if (c == 'd') {
+				auto numStr = args.front().substr(1);
+				try {
+					day_repeat = numStr.empty() ? 1 : std::stoi(numStr);
 				} catch (const std::exception& e) {
 					error += "⚠️ Неверный формат дней!";
 					return false;
@@ -308,8 +419,7 @@ struct ReminderInfo {
 				remDate += date::years(1);
 				remTp = toTp(remTime, remDate);
 			}
-
-		} else if (month_repeat) {
+		} else if (month_repeat != 0) {
 			if (remTp > currTp) {
 				return remTp;
 			}
@@ -317,16 +427,14 @@ struct ReminderInfo {
 			remTp = toTp(remTime, remDate);
 
 			while (remTp <= currTp || !remDate.ok()) {
-				remDate += date::months(1);
+				remDate += date::months(month_repeat);
 				remTp = toTp(remTime, remDate);
 			}
-
 		} else if (day_repeat != 0) {
 			while (remTp < currTp) {
 				remDate = date::sys_days{remDate} + date::days{day_repeat};
 				remTp = toTp(remTime, remDate);
 			}
-
 		} else if (week_repeat != 0) {
 			auto wa = bitWeekToArray(week_repeat);
 			auto weekIndex = [](const time_point<seconds>& tp) {
@@ -510,6 +618,31 @@ int main(int, char**) {
 			bot.getApi().sendMessage(msg->chat->id, "Здравствуйте, вы зарегестрированны.");
 		} catch (const std::exception& e) { std::cerr << e.what(); }
 	};
+	// auto addi = [&](TgBot::Message::Ptr msg) {
+	// 	try {
+	// 		if (!msg->chat) {
+	// 			std::cerr << "Невозможно переслать сообщение" << std::endl;
+	// 			return;
+	// 		}
+
+	// 		if (!msg->from) {
+	// 			bot.getApi().sendMessage(msg->chat->id, "⚠️ Несуществующий пользователь!");
+	// 			return;
+	// 		}
+
+	// 		std::int64_t userId = msg->from->id;
+	// 		std::int64_t chatId = msg->chat->id;
+
+	// 		std::vector<std::string> args;
+	// 		boost::split(args, msg->text, [](char c) { return c == ' ' || c == '\n' || c == '\t'; });
+
+	// 		if (args.size() == 1) {
+	// 			bot.getApi().sendMessage(chatId, "Выберите дату и повтор:", false, 0, makeAddIKeyboard(now()));
+	// 			bot.getApi().sendMessage(msg->chat->id, "qwe", false, 0, makeAddIKeyboard(now()));
+	// 		}
+
+	// 	} catch (const std::exception& e) { std::cerr << e.what(); }
+	// };
 	auto add = [&](TgBot::Message::Ptr msg) {
 		try {
 			if (!msg->chat) {
@@ -760,6 +893,7 @@ int main(int, char**) {
 	bot.getEvents().onCommand("start", start);
 	bot.getEvents().onCommand("list", list);
 	bot.getEvents().onCommand("add", add);
+	// bot.getEvents().onCommand("addi", addi);
 	bot.getEvents().onCommand("del", [&](auto q) { del(q, true); });
 	bot.getEvents().onCommand("deli", [&](auto q) { deli(q, 0); });
 
