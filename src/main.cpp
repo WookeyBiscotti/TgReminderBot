@@ -187,6 +187,11 @@ struct ReminderInfo {
 	std::int64_t _id = -1;
 
 	std::string pretty() const {
+		return fmt::format("{:0>2}/{:0>2}/{} {:0>2}:{:0>2} {}{}", day, month, year, hour, minute, descr,
+		    prettyRepeat());
+	}
+
+	std::string prettyRepeat() const {
 		std::string repeatInfo;
 		if (year_repeat) {
 			repeatInfo = "\nПовтор ежегодно.";
@@ -218,7 +223,7 @@ struct ReminderInfo {
 			repeatInfo.back() = '.';
 		}
 
-		return fmt::format("{:0>2}/{:0>2}/{} {:0>2}:{:0>2} {}{}", day, month, year, hour, minute, descr, repeatInfo);
+		return repeatInfo;
 	}
 
 	std::string toString() const {
@@ -523,10 +528,10 @@ class ReminderQuery {
 			for (auto& r : ringNow) {
 				std::string nextRing;
 				if (r.reminder.isRepeatable()) {
-					nextRing = fmt::format("\nСледующее напоминание:\n{}", prettyDateTime(r.nextTp));
+					nextRing = fmt::format("\n\nСледующее напоминание:\n{}", prettyDateTime(r.nextTp));
 				}
 				_bot.getApi().sendMessage(r.chatId,
-				    fmt::format("⏰ Напоминание ⏰\n{}{}", r.reminder.pretty(), nextRing));
+				    fmt::format("⏰{}⏰\n\n{}{}", r.reminder.descr, r.reminder.pretty(), nextRing));
 			}
 			ringNow.clear();
 
@@ -861,19 +866,24 @@ int main(int, char**) {
 			up::value value;
 			value = up::vm_fetch_all_records(db).fetch_value_or_throw(collection);
 
-			constexpr int PAGE_SIZE = 10;
-
-			std::string outMsg;
+			auto keyboard = std::make_shared<TgBot::InlineKeyboardMarkup>();
 			if (!value.is_array() || value.size() == 0) {
-				bot.getApi().sendMessage(msg->chat->id, "⚠️ Еще нет напоминаний.");
+				if (messageId == 0) {
+					bot.getApi().sendMessage(msg->chat->id, "⚠️ Нет напоминаний.");
+				} else {
+					setButton(keyboard, 0, keyboard->inlineKeyboard.size(),
+					    makeButon("Закрыть", fmt::format("/delete_last_msg")));
+					bot.getApi().editMessageText("⚠️ Нет напоминаний.", chatId, messageId, "", "", false, keyboard);
+				}
+
 				return;
 			}
+
+			constexpr int PAGE_SIZE = 10;
 			page = std::min<int>(page, (value.size() / PAGE_SIZE) + 1);
 
 			auto start = std::max<int>(0, (page - 1) * PAGE_SIZE);
 			auto end = std::min<int>(value.size(), page * PAGE_SIZE);
-
-			auto keyboard = std::make_shared<TgBot::InlineKeyboardMarkup>();
 
 			for (int i = start; i != end; ++i) {
 				ReminderInfo ri;
@@ -895,12 +905,10 @@ int main(int, char**) {
 			    makeButon("Отмена", fmt::format("/delete_last_msg")));
 
 			if (messageId == 0) {
-				bot.getApi().sendMessage(chatId,
-				    fmt::format("🗑️ Какое напоминание удалить❓", start, end, value.size(), outMsg), false, 0, keyboard);
+				bot.getApi().sendMessage(chatId, fmt::format("🗑️ Какое напоминание удалить❓"), false, 0, keyboard);
 			} else {
-				bot.getApi().editMessageText(
-				    fmt::format("🗑️ Какое напоминание удалить❓", start, end, value.size(), outMsg), chatId, messageId,
-				    "", "", false, keyboard);
+				bot.getApi().editMessageText(fmt::format("🗑️ Какое напоминание удалить❓"), chatId, messageId, "", "",
+				    false, keyboard);
 			}
 		} catch (const std::exception& e) { std::cerr << e.what(); }
 	};
