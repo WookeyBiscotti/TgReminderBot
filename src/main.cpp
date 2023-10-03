@@ -686,12 +686,12 @@ int main(int, char**) {
 			std::string error;
 			ReminderInfo ri;
 			if (!ri.parseCommand(msg->text, error)) {
-				bot.getApi().sendMessage(msg->chat->id, error);
+				bot.getApi().sendMessage(chatId, error);
 				return;
 			}
 
 			if (ri.descr.size() > 200) {
-				bot.getApi().sendMessage(msg->chat->id, "⚠️ Сообщение должно быть меньше 200 символов utf-8!");
+				bot.getApi().sendMessage(chatId, "⚠️ Сообщение должно быть меньше 200 символов utf-8!");
 				return;
 			}
 
@@ -701,17 +701,17 @@ int main(int, char**) {
 			auto localTp = now();
 			auto nextTp = ri.getNearTs(localTp);
 			if (nextTp < localTp) {
-				bot.getApi().sendMessage(msg->chat->id, "⚠️ Напоминание уже прошло, так же оно не повоторяется!");
+				bot.getApi().sendMessage(chatId, "⚠️ Напоминание уже прошло, так же оно не повоторяется!");
 				return;
 			}
 
 			auto collection = fmt::format("reminders_{}", chatId);
-			up::vm_store_record(db).store_or_throw(collection, v);
-			q.addTimer(msg->chat->id, nextTp, ri);
+			ri._id = up::vm_store_record(db).store_or_throw(collection, v);
 
-			bot.getApi().sendMessage(msg->chat->id,
-			    fmt::format("✅🗓️ Напоминание добавленно.\n{}\nСледующее срабатывание: {}", ri.pretty(),
-			        prettyDateTime(nextTp)));
+			q.addTimer(chatId, nextTp, ri);
+
+			bot.getApi().sendMessage(chatId, fmt::format("✅🗓️ Напоминание добавленно.\n{}\nСледующее срабатывание: {}",
+			                                     ri.pretty(), prettyDateTime(nextTp)));
 		} catch (const std::exception& e) { std::cerr << e.what(); }
 	};
 	auto list = [&](TgBot::Message::Ptr msg) {
