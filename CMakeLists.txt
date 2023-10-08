@@ -17,6 +17,7 @@ add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/3rdparty/unqlite_cpp")
 add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/3rdparty/spdlog")
 
 add_definitions(-DUNQLITE_CPP_ALLOW_EXCEPTIONS)
+add_definitions(-DHAVE_CURL)
 
 set(${CMAKE_CXX_FLAGS} "-I${CMAKE_CURRENT_LIST_DIR}/src")
 

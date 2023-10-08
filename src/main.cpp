@@ -4,6 +4,7 @@
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
 #include <tgbot/Bot.h>
+#include <tgbot/net/CurlHttpClient.h>
 #include <tgbot/net/TgLongPoll.h>
 #include <unqlite_cpp/unqlite_cpp.hpp>
 
@@ -23,7 +24,16 @@
 using namespace std::chrono;
 using namespace TgBot;
 
+using time_point_s = time_point<seconds>;
+
 constexpr size_t MAX_MESSAGE_SIZE = 4096;
+
+time_point_s now() {
+	static auto zone = date::locate_zone("Europe/Moscow");
+
+	return time_point_s(
+	    duration_cast<seconds>(date::make_zoned(zone, system_clock::now()).get_local_time().time_since_epoch()));
+}
 
 TgBot::InlineKeyboardButton::Ptr makeButon(const std::string& label, const std::string& key) {
 	TgBot::InlineKeyboardButton::Ptr bt(new TgBot::InlineKeyboardButton);
@@ -65,7 +75,32 @@ bool eraseReminder(up::db& db, std::int64_t chatId, std::int64_t recId) {
 	return vm.extract_or_throw("result").get_bool_or_throw();
 }
 
-std::string prettyDateTime(time_point<seconds> localTp) {
+std::pair<time_point_s, time_point_s> parseInfoArgs(std::vector<std::string>& args) {
+	auto n = now();
+	date::year_month_day ymd{date::sys_days{date::floor<date::days>(n.time_since_epoch())}};
+	if (args.empty() || args[0] == "w") {
+		auto d = (n - date::sys_days{ymd}.time_since_epoch()) + date::days(7);
+
+		return {n, n + d.time_since_epoch()};
+	} else if (args[0] == "cw") {
+		auto cw = date::year_month_weekday(date::sys_days{ymd});
+		auto d = date::sys_days{date::floor<date::days>(n.time_since_epoch()) - date::days(cw.weekday().c_encoding())};
+
+		return {n, n + d.time_since_epoch()};
+	} else if (args[0] == "m") {
+		auto d = (n - date::sys_days{ymd}.time_since_epoch()) + date::days(31);
+
+		return {n, n + d.time_since_epoch()};
+	} else if (args[0] == "cm") {
+		auto d = date::sys_days{date::floor<date::days>(date::sys_days{ymd + date::months(1)})};
+
+		return {n, n + d.time_since_epoch()};
+	} else {
+		return {n, n};
+	}
+}
+
+std::string prettyDateTime(time_point_s localTp) {
 	date::year_month_day ymd{date::sys_days{date::floor<date::days>(localTp.time_since_epoch())}};
 	date::time_of_day<minutes> tod{
 	    date::floor<minutes>(localTp.time_since_epoch() - date::sys_days{ymd}.time_since_epoch())};
@@ -77,6 +112,14 @@ std::string prettyDateTime(time_point<seconds> localTp) {
 std::string dateTimeToQueryFormat(date::year_month_day ymd, date::time_of_day<minutes> tod) {
 	return fmt::format("{}/{}_{}/{}/{}", tod.hours().count(), tod.minutes().count(), static_cast<unsigned>(ymd.day()),
 	    static_cast<unsigned>(ymd.month()), static_cast<int>(ymd.year()));
+}
+
+std::string tpToQueryFormat(time_point_s localTp) {
+	date::year_month_day ymd{date::sys_days{date::floor<date::days>(localTp.time_since_epoch())}};
+	date::time_of_day<minutes> tod{
+	    date::floor<minutes>(localTp.time_since_epoch() - date::sys_days{ymd}.time_since_epoch())};
+
+	return dateTimeToQueryFormat(ymd, tod);
 }
 
 auto queryFormatToDateTime(std::string cmd) {
@@ -100,14 +143,7 @@ auto queryFormatToDateTime(std::string cmd) {
 	return std::make_pair(ymd, tod);
 }
 
-time_point<seconds> now() {
-	static auto zone = date::locate_zone("Europe/Moscow");
-
-	return time_point<seconds>(
-	    duration_cast<seconds>(date::make_zoned(zone, system_clock::now()).get_local_time().time_since_epoch()));
-}
-
-TgBot::InlineKeyboardMarkup::Ptr makeAddIKeyboard(time_point<seconds> localTp) {
+TgBot::InlineKeyboardMarkup::Ptr makeAddIKeyboard(time_point_s localTp) {
 	date::year_month_day ymd{date::sys_days{date::floor<date::days>(localTp.time_since_epoch())}};
 	date::time_of_day<minutes> tod{
 	    date::floor<minutes>(localTp.time_since_epoch() - date::sys_days{ymd}.time_since_epoch())};
@@ -119,27 +155,25 @@ TgBot::InlineKeyboardMarkup::Ptr makeAddIKeyboard(time_point<seconds> localTp) {
 	yearName << ymd.year();
 
 	auto k = std::make_shared<TgBot::InlineKeyboardMarkup>();
-	// setButton(k, 0, 0, makeButon("-10", fmt::format("/addi {}", dateTimeToQueryFormat(ymd - date::years(10), tod))));
-	// setButton(k, 1, 0, makeButon("-5", fmt::format("/addi {}", dateTimeToQueryFormat(ymd - date::years(5), tod))));
-	// setButton(k, 2, 0, makeButon("-1", fmt::format("/addi {}", dateTimeToQueryFormat(ymd - date::years(1), tod))));
-	// setButton(k, 3, 0, makeButon(yearName.str(), "_"));
-	// setButton(k, 4, 0, makeButon("+1", fmt::format("/addi {}", dateTimeToQueryFormat(ymd + date::years(1), tod))));
-	// setButton(k, 5, 0, makeButon("+5", fmt::format("/addi {}", dateTimeToQueryFormat(ymd + date::years(5), tod))));
-	// setButton(k, 6, 0, makeButon("+10", fmt::format("/addi {}", dateTimeToQueryFormat(ymd + date::years(10), tod))));
+	setButton(k, 0, 0, makeButon("<5", fmt::format("/info {}", dateTimeToQueryFormat(ymd - date::years(5), tod))));
+	setButton(k, 1, 0, makeButon("<1", fmt::format("/info {}", dateTimeToQueryFormat(ymd - date::years(1), tod))));
+	setButton(k, 2, 0, makeButon(yearName.str(), "_"));
+	setButton(k, 3, 0, makeButon("1>", fmt::format("/info {}", dateTimeToQueryFormat(ymd + date::years(1), tod))));
+	setButton(k, 4, 0, makeButon("5>", fmt::format("/info {}", dateTimeToQueryFormat(ymd + date::years(5), tod))));
 
-	setButton(k, 0, 0, makeButon("-6", fmt::format("/addi {}", dateTimeToQueryFormat(ymd - date::months(6), tod))));
-	setButton(k, 1, 0, makeButon("-1", fmt::format("/addi {}", dateTimeToQueryFormat(ymd - date::months(1), tod))));
-	setButton(k, 2, 0, makeButon(monthName.str(), "_"));
-	setButton(k, 3, 0, makeButon("+1", fmt::format("/addi {}", dateTimeToQueryFormat(ymd + date::months(1), tod))));
-	setButton(k, 4, 0, makeButon("+5", fmt::format("/addi {}", dateTimeToQueryFormat(ymd + date::months(6), tod))));
+	setButton(k, 0, 1, makeButon("<6", fmt::format("/info {}", dateTimeToQueryFormat(ymd - date::months(6), tod))));
+	setButton(k, 1, 1, makeButon("<1", fmt::format("/info {}", dateTimeToQueryFormat(ymd - date::months(1), tod))));
+	setButton(k, 2, 1, makeButon(monthName.str(), "_"));
+	setButton(k, 3, 1, makeButon("1>", fmt::format("/info {}", dateTimeToQueryFormat(ymd + date::months(1), tod))));
+	setButton(k, 4, 1, makeButon("6>", fmt::format("/info {}", dateTimeToQueryFormat(ymd + date::months(6), tod))));
 
-	setButton(k, 0, 1, makeButon("Пн", "_"));
-	setButton(k, 1, 1, makeButon("Вт", "_"));
-	setButton(k, 2, 1, makeButon("Ср", "_"));
-	setButton(k, 3, 1, makeButon("Чт", "_"));
-	setButton(k, 4, 1, makeButon("Пт", "_"));
-	setButton(k, 5, 1, makeButon("Сб", "_"));
-	setButton(k, 6, 1, makeButon("Вс", "_"));
+	setButton(k, 0, 2, makeButon("Пн", "_"));
+	setButton(k, 1, 2, makeButon("Вт", "_"));
+	setButton(k, 2, 2, makeButon("Ср", "_"));
+	setButton(k, 3, 2, makeButon("Чт", "_"));
+	setButton(k, 4, 2, makeButon("Пт", "_"));
+	setButton(k, 5, 2, makeButon("Сб", "_"));
+	setButton(k, 6, 2, makeButon("Вс", "_"));
 
 	int todayDay = static_cast<unsigned>(ymd.day());
 	int lastDay = static_cast<unsigned>(date::year_month_day_last(ymd.year(), date::month_day_last(ymd.month())).day());
@@ -150,19 +184,20 @@ TgBot::InlineKeyboardMarkup::Ptr makeAddIKeyboard(time_point<seconds> localTp) {
 		int x = i % 7;
 		int y = i / 7;
 		if (i >= firstWeekDay && currDay < lastDay) {
-			setButton(k, x, y + 2,
+			setButton(k, x, y + 3,
 			    makeButon(currDay + 1 == todayDay ? fmt::format("|{}|", currDay + 1) : std::to_string(currDay + 1),
-			        fmt::format("/addi {}",
+			        fmt::format("/info {}",
 			            dateTimeToQueryFormat(date::year_month_day(date::day(currDay + 1) / ymd.month() / ymd.year()),
 			                tod))));
 			currDay++;
 		} else {
-			setButton(k, x, y + 2, makeButon(" ", "_"));
+			setButton(k, x, y + 3, makeButon(" ", "_"));
 			if (x == 6) {
 				break;
 			}
 		}
 	}
+	setButton(k, 0, k->inlineKeyboard.size(), makeButon("Закрыть", "/delete_last_msg"));
 
 	return k;
 }
@@ -374,12 +409,10 @@ struct ReminderInfo {
 			}
 			args.erase(args.begin());
 		}
-		{
-			for (const auto& w : args) {
-				descr += w;
-				if (&w != &args.back()) {
-					descr += ' ';
-				}
+		for (const auto& w : args) {
+			descr += w;
+			if (&w != &args.back()) {
+				descr += ' ';
 			}
 		}
 
@@ -394,15 +427,15 @@ struct ReminderInfo {
 		return res;
 	}
 
-	time_point<seconds> getNearTs(time_point<seconds> localTp) const {
+	time_point_s getNearTs(time_point_s localTp) const {
 		auto toTp = [](const date::time_of_day<minutes>& t, const date::year_month_day& d) {
-			return time_point<seconds>{duration_cast<seconds>(t.to_duration() + date::sys_days{d}.time_since_epoch())};
+			return time_point_s{duration_cast<seconds>(t.to_duration() + date::sys_days{d}.time_since_epoch())};
 		};
 
-		time_point<seconds> res;
+		time_point_s res;
 
 		if (!on) {
-			return time_point<seconds>(minutes(0));
+			return time_point_s(minutes(0));
 		}
 
 		auto remTime = date::time_of_day<minutes>(minutes(static_cast<long>(hour * 60 + minute)));
@@ -442,7 +475,7 @@ struct ReminderInfo {
 			}
 		} else if (week_repeat != 0) {
 			auto wa = bitWeekToArray(week_repeat);
-			auto weekIndex = [](const time_point<seconds>& tp) {
+			auto weekIndex = [](const time_point_s& tp) {
 				return date::year_month_weekday{date::sys_days{duration_cast<date::days>(tp.time_since_epoch())}}
 				           .weekday()
 				           .iso_encoding() -
@@ -464,10 +497,27 @@ struct ReminderInfo {
 	bool isRepeatable() const { return year_repeat || month_repeat || week_repeat || day_repeat; }
 };
 
+std::string renderRemindersForInfo(const std::vector<std::pair<time_point_s, ReminderInfo>>& rems) {
+	std::string out;
+
+	if (rems.empty()) {
+		return out;
+	}
+	// date::year_month_day{date::sys_days{date::floor<date::days>(rems.back().first.time_since_epoch())}};
+
+	// auto dd = date::floor<date::days>(rems.back().first.time_since_epoch()) -
+	//          date::floor<date::days>(rems.front().first.time_since_epoch());
+	for (auto& r : rems) {
+		out += fmt::format("{}: {}\n", prettyDateTime(r.first), r.second.descr);
+	}
+
+	return out;
+}
+
 class ReminderQuery {
   public:
 	ReminderQuery(Bot& bot): _bot(bot) {}
-	void addTimer(std::int64_t chatId, time_point<seconds> tp, const ReminderInfo& reminder) {
+	void addTimer(std::int64_t chatId, time_point_s tp, const ReminderInfo& reminder) {
 		std::scoped_lock l(_m);
 		_order[chatId].emplace(tp, reminder);
 		_cond.notify_all();
@@ -492,11 +542,31 @@ class ReminderQuery {
 		_cond.notify_all();
 	}
 
+	std::vector<std::pair<time_point_s, ReminderInfo>> getInterval(std::int64_t chatId, time_point_s from,
+	    time_point_s to) {
+		std::unique_lock lk(_m);
+
+		const auto& rems = _order[chatId];
+
+		std::vector<std::pair<time_point_s, ReminderInfo>> out;
+		for (auto& r : rems) {
+			if (r.first <= from) {
+				continue;
+			}
+			if (r.first > to) {
+				break;
+			}
+			out.emplace_back(r.first, r.second);
+		}
+
+		return out;
+	}
+
 	void run() {
 		struct RingInfo {
 			std::int64_t chatId;
 			ReminderInfo reminder;
-			time_point<seconds> nextTp;
+			time_point_s nextTp;
 		};
 		std::vector<RingInfo> ringNow;
 
@@ -545,7 +615,7 @@ class ReminderQuery {
 	std::atomic_bool _running;
 
 	Bot& _bot;
-	std::unordered_map<std::int64_t /*chatId*/, std::multimap<time_point<seconds>, ReminderInfo>> _order;
+	std::unordered_map<std::int64_t /*chatId*/, std::multimap<time_point_s, ReminderInfo>> _order;
 };
 
 std::vector<ReminderInfo> loadReminders(up::db& db, std::int64_t chatId) {
@@ -601,7 +671,8 @@ int main(int, char**) {
 		exit(0);
 	});
 
-	Bot bot(findToken());
+	CurlHttpClient curlHttpClient;
+	Bot bot(findToken(), curlHttpClient);
 	bot.getApi().deleteWebhook();
 
 	up::db db("db.bin");
@@ -912,6 +983,48 @@ int main(int, char**) {
 			}
 		} catch (const std::exception& e) { std::cerr << e.what(); }
 	};
+	auto info = [&](TgBot::Message::Ptr msg, std::int64_t messageId) {
+		if (!msg->chat) {
+			std::cerr << "Невозможно переслать сообщение" << std::endl;
+			return;
+		}
+
+		if (!msg->from) {
+			bot.getApi().sendMessage(msg->chat->id, "⚠️ Несуществующий пользователь!");
+			return;
+		}
+
+		std::int64_t userId = msg->from->id;
+		std::int64_t chatId = msg->chat->id;
+
+		if (!isChatRegistered(db, chatId)) {
+			bot.getApi().sendMessage(chatId, "⚠️ Бот еще не зарегестрирован в этом чате!(/start)");
+			return;
+		}
+
+		std::vector<std::string> args;
+		boost::split(args, msg->text, [](char c) { return c == ' ' || c == '\n' || c == '\t'; });
+
+		// if (args.size() > 2) {
+		// 	bot.getApi().sendMessage(chatId, "⚠️ Неверное колличество аргументов!");
+		// 	return;
+		// }
+		args.erase(args.begin());
+
+		if (args.empty()) {
+			args.push_back(tpToQueryFormat(now()));
+		}
+
+		auto interval = parseInfoArgs(args);
+		auto outMsg = renderRemindersForInfo(q.getInterval(chatId, interval.first, interval.second));
+
+		auto k = makeAddIKeyboard(now());
+
+		if (outMsg.empty()) {
+			outMsg = "⚠️ Нет напоминаний!";
+		}
+		bot.getApi().sendMessage(chatId, outMsg, false, 0, k);
+	};
 
 	bot.getEvents().onCommand("start", start);
 	bot.getEvents().onCommand("list", list);
@@ -919,6 +1032,7 @@ int main(int, char**) {
 	// bot.getEvents().onCommand("addi", addi);
 	bot.getEvents().onCommand("del", [&](auto q) { del(q, true); });
 	bot.getEvents().onCommand("deli", [&](auto q) { deli(q, 0); });
+	bot.getEvents().onCommand("info", [&](auto q) { info(q, 0); });
 
 	bot.getEvents().onCallbackQuery([&](CallbackQuery::Ptr query) {
 		query->message->text = query->data;
@@ -935,6 +1049,8 @@ int main(int, char**) {
 			deli(query->message, query->message->messageId);
 		} else if (args.front() == "/delete_last_msg") {
 			bot.getApi().deleteMessage(query->message->chat->id, query->message->messageId);
+		} else if (args.front() == "/info") {
+			info(query->message, query->message->messageId);
 		}
 	});
 
