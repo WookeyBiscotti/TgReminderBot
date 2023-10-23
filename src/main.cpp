@@ -219,6 +219,8 @@ struct ReminderInfo {
 	std::int64_t week_repeat = 0; // bit schema here
 	std::int64_t day_repeat = 0;
 
+	std::int64_t pre_reminder = 0;
+
 	std::int64_t _id = -1;
 
 	std::string pretty() const {
@@ -305,6 +307,10 @@ struct ReminderInfo {
 		week_repeat = v.at("week_repeat").get_int_or_throw();
 		day_repeat = v.at("day_repeat").get_int_or_throw();
 
+		if(auto pr = v.find("pre_reminder")) {
+			pre_reminder = pr->get_int_or_throw();
+		}
+
 		_id = v.at("__id").get_int_or_default(-1);
 	}
 
@@ -324,6 +330,8 @@ struct ReminderInfo {
 		v["month_repeat"] = month_repeat;
 		v["week_repeat"] = week_repeat;
 		v["day_repeat"] = day_repeat;
+
+		v["pre_reminder"] = pre_reminder;
 	}
 
 	// /add 13/06/23 14:23 n|y|m|d|w12345 msg with spaces
