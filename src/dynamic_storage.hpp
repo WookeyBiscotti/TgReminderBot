@@ -1,6 +1,5 @@
 #pragma once
 
-#include <nlohmann/json.hpp>
 #include <unqlite_cpp/unqlite_cpp.hpp>
 
 #include <atomic>
@@ -11,27 +10,21 @@
 
 class DynamicStorage {
 	using Key = std::string;
+	using Data = up::value;
 
   public:
 	DynamicStorage(up::db& db, std::string collection): _db(db), _collection(std::move(collection)) {
-		auto c = db.make_kv_cursor_or_throw();
-		c.seek_or_throw(collection, up::kv_cursor_match_direction::MATCH_GE);
-		while (c.valid()) {
-			auto key = c.key_or_throw();
-			key = key.substr(collection.size());
+		auto recs = up::vm_fetch_all_records(db).fetch_or_throw(_collection).make_value();
 
-			auto data = c.data_string_or_throw();
-			auto js = nlohmann::json::parse(data);
-
-			_cache.emplace(key,
-			    Cache{std::chrono::steady_clock::time_point{std::chrono::seconds(js["tp"].get<uint64_t>())},
-			        js.at("data")});
-
-			c.next_or_throw();
-		}
+		recs.foreach_if_array([&](auto, const up::value& v) {
+			_cache.emplace(v.at("key").get_string(),
+			    Cache{std::chrono::steady_clock::time_point{std::chrono::seconds(v.at("dp").get_int())}, v.at("data"),
+			        v.at("__id").get_int()});
+			return true;
+		});
 	}
 
-	std::optional<nlohmann::json> find(const std::string& key) {
+	std::optional<Data> find(const std::string& key) {
 		const auto now = std::chrono::steady_clock::now();
 		if (_nextVacuum < now) {
 			vacuum(now);
@@ -43,34 +36,25 @@ class DynamicStorage {
 
 	void removeCache(const Key& key) {
 		_cache.erase(key);
-		_db.remove_or_throw(makeKey(key));
+		_db.remove_or_throw(key);
 	}
 
-	void makeCache(const Key& key, nlohmann::json data, std::uint64_t timeout = 1000) {
+	void make(const Key& key, Data data, std::uint64_t timeout = 1000) {
 		const auto now = std::chrono::steady_clock::now();
 		if (_cache.count(key)) {
-			_db.remove_or_throw(makeKey(key));
+			up::vm_drop_record(_db).drop(_collection, _cache[key].id);
 		}
-		_cache.insert_or_assign(key, Cache{now + std::chrono::seconds(timeout), std::move(data)});
-		nlohmann::json d;
+		up::value d;
+		d["key"] = key;
 		d["data"] = data;
-		d["tp"] =
+		d["dp"] =
 		    std::chrono::duration_cast<std::chrono::seconds>((now + std::chrono::seconds(timeout)).time_since_epoch())
 		        .count();
-		_db.store_or_throw(makeKey(key), d.dump());
+		auto id = up::vm_store_record(_db).store_or_throw(_collection, d);
+		_cache.insert_or_assign(key, Cache{now + std::chrono::seconds(timeout), std::move(data), id});
 	}
 
-  private:
-	std::optional<nlohmann::json> findImpl(const Key& key) {
-		auto found = _cache.find(key);
-		if (found == _cache.end()) {
-			return {};
-		}
-
-		return found->second.data;
-	}
-
-	void vacuum(std::chrono::steady_clock::time_point now) {
+	void vacuum(std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now()) {
 		for (auto cacheIt = _cache.begin(); cacheIt != _cache.end();) {
 			if (cacheIt->second.deadPoint < now) {
 				cacheIt = _cache.erase(cacheIt);
@@ -81,7 +65,14 @@ class DynamicStorage {
 	}
 
   private:
-	Key makeKey(const std::string& k) { return _collection + k; }
+	std::optional<Data> findImpl(const Key& key) {
+		auto found = _cache.find(key);
+		if (found == _cache.end()) {
+			return {};
+		}
+
+		return found->second.data;
+	}
 
   private:
 	up::db& _db;
@@ -90,7 +81,8 @@ class DynamicStorage {
 	std::chrono::steady_clock::time_point _nextVacuum{};
 	struct Cache {
 		std::chrono::steady_clock::time_point deadPoint;
-		nlohmann::json data;
+		Data data;
+		int64_t id;
 	};
 
 	std::unordered_map<Key, Cache> _cache;

@@ -1,3 +1,6 @@
+#include "auto_reminder.hpp"
+#include "utils.hpp"
+
 #include <boost/algorithm/string/split.hpp>
 #include <date/date.h>
 #include <date/tz.h>
@@ -23,46 +26,6 @@
 
 using namespace std::chrono;
 using namespace TgBot;
-
-using time_point_s = time_point<seconds>;
-
-constexpr size_t MAX_MESSAGE_SIZE = 4096;
-
-time_point_s now() {
-	static auto zone = date::locate_zone("Europe/Moscow");
-
-	return time_point_s(
-	    duration_cast<seconds>(date::make_zoned(zone, system_clock::now()).get_local_time().time_since_epoch()));
-}
-
-TgBot::InlineKeyboardButton::Ptr makeButon(const std::string& label, const std::string& key) {
-	TgBot::InlineKeyboardButton::Ptr bt(new TgBot::InlineKeyboardButton);
-	bt->text = label;
-	bt->callbackData = key;
-
-	return bt;
-}
-
-void setButton(TgBot::InlineKeyboardMarkup::Ptr keyboard, size_t x, size_t y, TgBot::InlineKeyboardButton::Ptr btn) {
-	if (keyboard->inlineKeyboard.size() <= y) {
-		keyboard->inlineKeyboard.resize(y + 1);
-	}
-	if (keyboard->inlineKeyboard[y].size() <= x) {
-		keyboard->inlineKeyboard[y].resize(x + 1);
-	}
-	keyboard->inlineKeyboard[y][x] = btn;
-}
-
-inline std::string findToken() {
-	std::string token;
-	std::ifstream tokenFile("token");
-	if (!tokenFile.is_open()) {
-		throw std::runtime_error("Can't find token");
-	}
-	tokenFile >> token;
-
-	return token;
-}
 
 bool eraseReminder(up::db& db, std::int64_t chatId, std::int64_t recId) {
 	auto vm = db.compile_or_throw("$result = db_drop_record($c, $recId);");
@@ -109,39 +72,39 @@ std::string prettyDateTime(time_point_s localTp) {
 	    static_cast<unsigned>(ymd.day()), static_cast<unsigned>(ymd.month()), static_cast<int>(ymd.year()));
 }
 
-std::string dateTimeToQueryFormat(date::year_month_day ymd, date::time_of_day<minutes> tod) {
-	return fmt::format("{}/{}_{}/{}/{}", tod.hours().count(), tod.minutes().count(), static_cast<unsigned>(ymd.day()),
-	    static_cast<unsigned>(ymd.month()), static_cast<int>(ymd.year()));
-}
+// std::string dateTimeToQueryFormat(date::year_month_day ymd, date::time_of_day<minutes> tod) {
+// 	return fmt::format("{}/{}_{}/{}/{}", tod.hours().count(), tod.minutes().count(), static_cast<unsigned>(ymd.day()),
+// 	    static_cast<unsigned>(ymd.month()), static_cast<int>(ymd.year()));
+// }
 
-std::string tpToQueryFormat(time_point_s localTp) {
-	date::year_month_day ymd{date::sys_days{date::floor<date::days>(localTp.time_since_epoch())}};
-	date::time_of_day<minutes> tod{
-	    date::floor<minutes>(localTp.time_since_epoch() - date::sys_days{ymd}.time_since_epoch())};
+// std::string tpToQueryFormat(time_point_s localTp) {
+// 	date::year_month_day ymd{date::sys_days{date::floor<date::days>(localTp.time_since_epoch())}};
+// 	date::time_of_day<minutes> tod{
+// 	    date::floor<minutes>(localTp.time_since_epoch() - date::sys_days{ymd}.time_since_epoch())};
 
-	return dateTimeToQueryFormat(ymd, tod);
-}
+// 	return dateTimeToQueryFormat(ymd, tod);
+// }
 
-auto queryFormatToDateTime(std::string cmd) {
-	std::vector<std::string> args;
-	boost::split(args, cmd, [](char c) { return c == '_'; });
+// auto queryFormatToDateTime(std::string cmd) {
+// 	std::vector<std::string> args;
+// 	boost::split(args, cmd, [](char c) { return c == '_'; });
 
-	auto tod = [](auto& ts) {
-		std::vector<std::string> args;
-		boost::split(args, ts, [](char c) { return c == '/'; });
+// 	auto tod = [](auto& ts) {
+// 		std::vector<std::string> args;
+// 		boost::split(args, ts, [](char c) { return c == '/'; });
 
-		return date::time_of_day<minutes>(minutes(std::stoi(args.at(0)) * 60 + std::stoi(args.at(1))));
-	}(args.at(0));
+// 		return date::time_of_day<minutes>(minutes(std::stoi(args.at(0)) * 60 + std::stoi(args.at(1))));
+// 	}(args.at(0));
 
-	auto ymd = [](auto& ts) {
-		std::vector<std::string> args;
-		boost::split(args, ts, [](char c) { return c == '/'; });
+// 	auto ymd = [](auto& ts) {
+// 		std::vector<std::string> args;
+// 		boost::split(args, ts, [](char c) { return c == '/'; });
 
-		return date::year_month_day(date::day(std::stoi(args.at(0))) / std::stoi(args.at(1)) / std::stoi(args.at(2)));
-	}(args.at(1));
+// 		return date::year_month_day(date::day(std::stoi(args.at(0))) / std::stoi(args.at(1)) / std::stoi(args.at(2)));
+// 	}(args.at(1));
 
-	return std::make_pair(ymd, tod);
-}
+// 	return std::make_pair(ymd, tod);
+// }
 
 TgBot::InlineKeyboardMarkup::Ptr makeAddIKeyboard(time_point_s localTp) {
 	date::year_month_day ymd{date::sys_days{date::floor<date::days>(localTp.time_since_epoch())}};
@@ -197,7 +160,7 @@ TgBot::InlineKeyboardMarkup::Ptr makeAddIKeyboard(time_point_s localTp) {
 			}
 		}
 	}
-	setButton(k, 0, k->inlineKeyboard.size(), makeButon("Закрыть", "/delete_last_msg"));
+	setButton(k, 0, k->inlineKeyboard.size(), makeButon("Закрыть", "/delete_me"));
 
 	return k;
 }
@@ -307,7 +270,7 @@ struct ReminderInfo {
 		week_repeat = v.at("week_repeat").get_int_or_throw();
 		day_repeat = v.at("day_repeat").get_int_or_throw();
 
-		if(auto pr = v.find("pre_reminder")) {
+		if (auto pr = v.find("pre_reminder")) {
 			pre_reminder = pr->get_int_or_throw();
 		}
 
@@ -684,23 +647,13 @@ int main(int, char**) {
 	bot.getApi().deleteWebhook();
 
 	up::db db("db.bin");
+	DynamicStorage ds(db, "dynamic_storage");
 
 	ReminderQuery q(bot);
 
 	auto start = [&](TgBot::Message::Ptr msg) {
 		try {
-			if (!msg->chat) {
-				std::cerr << "Невозможно переслать сообщение" << std::endl;
-				return;
-			}
-
-			if (!msg->from) {
-				bot.getApi().sendMessage(msg->chat->id, "⚠️ Несуществующий пользователь!");
-				return;
-			}
-
-			std::int64_t userId = msg->from->id;
-			std::int64_t chatId = msg->chat->id;
+			auto [userId, chatId] = getUserChatOrThrow(msg);
 
 			if (isChatRegistered(db, chatId)) {
 				bot.getApi().sendMessage(chatId, "⚠️ Бот уже существует в этом чате!");
@@ -744,18 +697,7 @@ int main(int, char**) {
 	// };
 	auto add = [&](TgBot::Message::Ptr msg) {
 		try {
-			if (!msg->chat) {
-				std::cerr << "Невозможно переслать сообщение" << std::endl;
-				return;
-			}
-
-			if (!msg->from) {
-				bot.getApi().sendMessage(msg->chat->id, "⚠️ Несуществующий пользователь!");
-				return;
-			}
-
-			std::int64_t userId = msg->from->id;
-			std::int64_t chatId = msg->chat->id;
+			auto [userId, chatId] = getUserChatOrThrow(msg);
 
 			if (!isChatRegistered(db, chatId)) {
 				bot.getApi().sendMessage(chatId, "⚠️ Бот еще не зарегестрирован в этом чате!(/start)");
@@ -795,18 +737,7 @@ int main(int, char**) {
 	};
 	auto list = [&](TgBot::Message::Ptr msg) {
 		try {
-			if (!msg->chat) {
-				std::cerr << "Невозможно переслать сообщение" << std::endl;
-				return;
-			}
-
-			if (!msg->from) {
-				bot.getApi().sendMessage(msg->chat->id, "⚠️ Несуществующий пользователь!");
-				return;
-			}
-
-			std::int64_t userId = msg->from->id;
-			std::int64_t chatId = msg->chat->id;
+			auto [userId, chatId] = getUserChatOrThrow(msg);
 
 			if (!isChatRegistered(db, chatId)) {
 				bot.getApi().sendMessage(chatId, "⚠️ Бот еще не зарегестрирован в этом чате!(/start)");
@@ -852,32 +783,23 @@ int main(int, char**) {
 			    fmt::format("🗓️ Список напоминаний({}-{})/{}:\n{}", start, end, value.size(), outMsg));
 		} catch (const std::exception& e) { std::cerr << e.what(); }
 	};
-	auto del = [&](TgBot::Message::Ptr msg, bool allowMsgs) {
+	auto del = [&](TgBot::Message::Ptr msg, CallbackQuery::Ptr query) {
 		try {
-			if (!msg->chat) {
-				std::cerr << "Невозможно переслать сообщение" << std::endl;
-				return;
-			}
-
-			if (!msg->from) {
-				if (allowMsgs) {
-					bot.getApi().sendMessage(msg->chat->id, "⚠️ Несуществующий пользователь!");
-				}
-				return;
-			}
-
-			auto userId = msg->from->id;
-			auto chatId = msg->chat->id;
+			auto [userId, chatId] = getUserChatOrThrow(msg);
 
 			if (!isChatRegistered(db, chatId)) {
-				if (allowMsgs) {
+				if (!query) {
 					bot.getApi().sendMessage(chatId, "⚠️ Бот еще не зарегестрирован в этом чате!(/start)");
 				}
 				return;
 			}
 
 			std::vector<std::string> args;
-			boost::split(args, msg->text, [](char c) { return c == ' ' || c == '\n' || c == '\t'; });
+			if (query) {
+				boost::split(args, query->data, [](char c) { return c == ' ' || c == '\n' || c == '\t'; });
+			} else {
+				boost::split(args, msg->text, [](char c) { return c == ' ' || c == '\n' || c == '\t'; });
+			}
 
 			if (args.size() != 2) {
 				bot.getApi().sendMessage(msg->chat->id, "⚠️ Неверный формат команды!");
@@ -887,37 +809,26 @@ int main(int, char**) {
 			try {
 				recId = std::stoi(args.back());
 			} catch (const std::exception& e) {
-				if (allowMsgs) {
+				if (!query) {
 					bot.getApi().sendMessage(msg->chat->id, "⚠️ Неверный формат id!");
 				}
 				return;
 			}
 			if (eraseReminder(db, chatId, recId)) {
 				q.removeTimer(chatId, recId);
-				if (allowMsgs) {
+				if (!query) {
 					bot.getApi().sendMessage(msg->chat->id, "✅ Напоминание удаленно.");
 				}
 			} else {
-				if (allowMsgs) {
+				if (!query) {
 					bot.getApi().sendMessage(msg->chat->id, "❌ Напоминания не существует.");
 				}
 			}
 		} catch (const std::exception& e) { std::cerr << e.what(); }
 	};
-	auto deli = [&](TgBot::Message::Ptr msg, std::int64_t messageId) {
+	auto deli = [&](TgBot::Message::Ptr msg, CallbackQuery::Ptr query) {
 		try {
-			if (!msg->chat) {
-				std::cerr << "Невозможно переслать сообщение" << std::endl;
-				return;
-			}
-
-			if (!msg->from) {
-				bot.getApi().sendMessage(msg->chat->id, "⚠️ Несуществующий пользователь!");
-				return;
-			}
-
-			std::int64_t userId = msg->from->id;
-			std::int64_t chatId = msg->chat->id;
+			auto [userId, chatId] = getUserChatOrThrow(msg);
 
 			if (!isChatRegistered(db, chatId)) {
 				bot.getApi().sendMessage(chatId, "⚠️ Бот еще не зарегестрирован в этом чате!(/start)");
@@ -925,7 +836,11 @@ int main(int, char**) {
 			}
 
 			std::vector<std::string> args;
-			boost::split(args, msg->text, [](char c) { return c == ' ' || c == '\n' || c == '\t'; });
+			if (query) {
+				boost::split(args, query->data, [](char c) { return c == ' ' || c == '\n' || c == '\t'; });
+			} else {
+				boost::split(args, msg->text, [](char c) { return c == ' ' || c == '\n' || c == '\t'; });
+			}
 
 			if (args.size() > 2) {
 				bot.getApi().sendMessage(chatId, "⚠️ Неверное колличество аргументов!");
@@ -947,12 +862,12 @@ int main(int, char**) {
 
 			auto keyboard = std::make_shared<TgBot::InlineKeyboardMarkup>();
 			if (!value.is_array() || value.size() == 0) {
-				if (messageId == 0) {
+				if (!query) {
 					bot.getApi().sendMessage(msg->chat->id, "⚠️ Нет напоминаний.");
 				} else {
 					setButton(keyboard, 0, keyboard->inlineKeyboard.size(),
-					    makeButon("Закрыть", fmt::format("/delete_last_msg")));
-					bot.getApi().editMessageText("⚠️ Нет напоминаний.", chatId, messageId, "", "", false, keyboard);
+					    makeButon("Закрыть", fmt::format("/delete_me")));
+					bot.getApi().editMessageText("⚠️ Нет напоминаний.", chatId, msg->messageId, "", "", false, keyboard);
 				}
 
 				return;
@@ -980,86 +895,84 @@ int main(int, char**) {
 					setButton(keyboard, 0, end - start, makeButon(">", fmt::format("/deli {}", page + 1)));
 				}
 			}
-			setButton(keyboard, 0, keyboard->inlineKeyboard.size(),
-			    makeButon("Отмена", fmt::format("/delete_last_msg")));
+			setButton(keyboard, 0, keyboard->inlineKeyboard.size(), makeButon("Отмена", fmt::format("/delete_me")));
 
-			if (messageId == 0) {
+			if (!query) {
 				bot.getApi().sendMessage(chatId, fmt::format("🗑️ Какое напоминание удалить❓"), false, 0, keyboard);
 			} else {
-				bot.getApi().editMessageText(fmt::format("🗑️ Какое напоминание удалить❓"), chatId, messageId, "", "",
-				    false, keyboard);
+				bot.getApi().editMessageText(fmt::format("🗑️ Какое напоминание удалить❓"), chatId, msg->messageId, "",
+				    "", false, keyboard);
 			}
 		} catch (const std::exception& e) { std::cerr << e.what(); }
 	};
-	auto info = [&](TgBot::Message::Ptr msg, std::int64_t messageId) {
-		if (!msg->chat) {
-			std::cerr << "Невозможно переслать сообщение" << std::endl;
-			return;
-		}
+	// auto info = [&](TgBot::Message::Ptr msg, std::int64_t messageId) {
+	// 	auto [userId, chatId] = getUserChatOrThrow(msg);
 
-		if (!msg->from) {
-			bot.getApi().sendMessage(msg->chat->id, "⚠️ Несуществующий пользователь!");
-			return;
-		}
+	// 	if (!isChatRegistered(db, chatId)) {
+	// 		bot.getApi().sendMessage(chatId, "⚠️ Бот еще не зарегестрирован в этом чате!(/start)");
+	// 		return;
+	// 	}
 
-		std::int64_t userId = msg->from->id;
-		std::int64_t chatId = msg->chat->id;
+	// 	std::vector<std::string> args;
+	// 	boost::split(args, msg->text, [](char c) { return c == ' ' || c == '\n' || c == '\t'; });
 
-		if (!isChatRegistered(db, chatId)) {
-			bot.getApi().sendMessage(chatId, "⚠️ Бот еще не зарегестрирован в этом чате!(/start)");
-			return;
-		}
+	// 	// if (args.size() > 2) {
+	// 	// 	bot.getApi().sendMessage(chatId, "⚠️ Неверное колличество аргументов!");
+	// 	// 	return;
+	// 	// }
+	// 	args.erase(args.begin());
 
-		std::vector<std::string> args;
-		boost::split(args, msg->text, [](char c) { return c == ' ' || c == '\n' || c == '\t'; });
+	// 	if (args.empty()) {
+	// 		args.push_back(tpToQueryFormat(now()));
+	// 	}
 
-		// if (args.size() > 2) {
-		// 	bot.getApi().sendMessage(chatId, "⚠️ Неверное колличество аргументов!");
-		// 	return;
-		// }
-		args.erase(args.begin());
+	// 	auto interval = parseInfoArgs(args);
+	// 	auto outMsg = renderRemindersForInfo(q.getInterval(chatId, interval.first, interval.second));
 
-		if (args.empty()) {
-			args.push_back(tpToQueryFormat(now()));
-		}
+	// 	auto k = makeAddIKeyboard(now());
 
-		auto interval = parseInfoArgs(args);
-		auto outMsg = renderRemindersForInfo(q.getInterval(chatId, interval.first, interval.second));
-
-		auto k = makeAddIKeyboard(now());
-
-		if (outMsg.empty()) {
-			outMsg = "⚠️ Нет напоминаний!";
-		}
-		bot.getApi().sendMessage(chatId, outMsg, false, 0, k);
-	};
+	// 	if (outMsg.empty()) {
+	// 		outMsg = "⚠️ Нет напоминаний!";
+	// 	}
+	// 	bot.getApi().sendMessage(chatId, outMsg, false, 0, k);
+	// };
 
 	bot.getEvents().onCommand("start", start);
 	bot.getEvents().onCommand("list", list);
 	bot.getEvents().onCommand("add", add);
 	// bot.getEvents().onCommand("addi", addi);
-	bot.getEvents().onCommand("del", [&](auto q) { del(q, true); });
+	bot.getEvents().onCommand("del", [&](auto q) { del(q, nullptr); });
 	bot.getEvents().onCommand("deli", [&](auto q) { deli(q, 0); });
-	bot.getEvents().onCommand("info", [&](auto q) { info(q, 0); });
+	// bot.getEvents().onCommand("info", [&](auto q) { info(q, 0); });
 
 	bot.getEvents().onCallbackQuery([&](CallbackQuery::Ptr query) {
-		query->message->text = query->data;
-
 		std::vector<std::string> args;
 		boost::split(args, query->data, [](char c) { return c == ' ' || c == '\n' || c == '\t'; });
 		if (args.empty() || !query->message || !query->message->chat) {
 			return;
 		}
 		if (args.front() == "/del") {
-			del(query->message, false);
-			deli(query->message, query->message->messageId);
+			del(query->message, query);
+			deli(query->message, query);
 		} else if (args.front() == "/deli") {
-			deli(query->message, query->message->messageId);
-		} else if (args.front() == "/delete_last_msg") {
+			deli(query->message, query);
+		} else if (args.front() == "/delete_me") {
 			bot.getApi().deleteMessage(query->message->chat->id, query->message->messageId);
-		} else if (args.front() == "/info") {
-			info(query->message, query->message->messageId);
+		} else if (args.front() == "/ar_date") {
+			ar_date(bot, ds)(query);
+		} else if (args.front() == "/ar_time") {
+			ar_time(bot, ds)(query);
 		}
+	});
+
+	bot.getEvents().onAnyMessage([&](TgBot::Message::Ptr msg) {
+		auto [userId, chatId] = getUserChatOrThrow(msg);
+
+		if (msg->chat->type != Chat::Type::Private) {
+			return;
+		}
+
+		sendAutoReminderMsg(bot, msg->chat->id, msg->text);
 	});
 
 	auto localTp = now();

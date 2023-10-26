@@ -21,30 +21,47 @@ add_definitions(-DHAVE_CURL)
 
 set(${CMAKE_CXX_FLAGS} "-I${CMAKE_CURRENT_LIST_DIR}/src")
 
-file(
-  GLOB_RECURSE FIT_LOG_SOURCES
-  RELATIVE "${CMAKE_CURRENT_LIST_DIR}"
-  CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/src/*.[ch]pp")
+# file(
+#   GLOB_RECURSE FIT_LOG_SOURCES
+#   RELATIVE "${CMAKE_CURRENT_LIST_DIR}"
+#   CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/src/*.[ch]pp")
 
 add_executable(
   TgReminderBot
-  ${FIT_LOG_SOURCES} "${CMAKE_CURRENT_LIST_DIR}/3rdparty/date/src/tz.cpp"
+  "src/main.cpp" "${CMAKE_CURRENT_LIST_DIR}/3rdparty/date/src/tz.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/3rdparty/unqlite/unqlite.c")
 
-target_link_libraries(TgReminderBot PUBLIC m)
-
 target_include_directories(TgReminderBot
-                           PUBLIC "${CMAKE_CURRENT_LIST_DIR}/3rdparty/unqlite")
+  PUBLIC "${CMAKE_CURRENT_LIST_DIR}/3rdparty/unqlite")
 target_include_directories(TgReminderBot PUBLIC "${CMAKE_CURRENT_LIST_DIR}/src")
 
 target_link_libraries(
   TgReminderBot
   PUBLIC TgBot
-         fmt::fmt
-         nlohmann_json::nlohmann_json
-         date::date
-         unqlite_cpp::unqlite_cpp
-         spdlog::spdlog_header_only
-         ${Boost_LIBRARIES})
+  fmt::fmt
+  nlohmann_json::nlohmann_json
+  date::date
+  unqlite_cpp::unqlite_cpp
+  spdlog::spdlog_header_only
+  ${Boost_LIBRARIES})
+
+add_executable(
+  TgReminderBotTest
+  "src/test.cpp"  "${CMAKE_CURRENT_LIST_DIR}/3rdparty/date/src/tz.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/3rdparty/unqlite/unqlite.c")
+
+target_include_directories(TgReminderBotTest
+  PUBLIC "${CMAKE_CURRENT_LIST_DIR}/3rdparty/unqlite")
+target_include_directories(TgReminderBotTest PUBLIC "${CMAKE_CURRENT_LIST_DIR}/src")
+
+target_link_libraries(
+  TgReminderBotTest
+  PUBLIC TgBot
+  fmt::fmt
+  nlohmann_json::nlohmann_json
+  date::date
+  unqlite_cpp::unqlite_cpp
+  spdlog::spdlog_header_only
+  ${Boost_LIBRARIES})
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
