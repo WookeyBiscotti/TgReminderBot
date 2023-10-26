@@ -72,99 +72,6 @@ std::string prettyDateTime(time_point_s localTp) {
 	    static_cast<unsigned>(ymd.day()), static_cast<unsigned>(ymd.month()), static_cast<int>(ymd.year()));
 }
 
-// std::string dateTimeToQueryFormat(date::year_month_day ymd, date::time_of_day<minutes> tod) {
-// 	return fmt::format("{}/{}_{}/{}/{}", tod.hours().count(), tod.minutes().count(), static_cast<unsigned>(ymd.day()),
-// 	    static_cast<unsigned>(ymd.month()), static_cast<int>(ymd.year()));
-// }
-
-// std::string tpToQueryFormat(time_point_s localTp) {
-// 	date::year_month_day ymd{date::sys_days{date::floor<date::days>(localTp.time_since_epoch())}};
-// 	date::time_of_day<minutes> tod{
-// 	    date::floor<minutes>(localTp.time_since_epoch() - date::sys_days{ymd}.time_since_epoch())};
-
-// 	return dateTimeToQueryFormat(ymd, tod);
-// }
-
-// auto queryFormatToDateTime(std::string cmd) {
-// 	std::vector<std::string> args;
-// 	boost::split(args, cmd, [](char c) { return c == '_'; });
-
-// 	auto tod = [](auto& ts) {
-// 		std::vector<std::string> args;
-// 		boost::split(args, ts, [](char c) { return c == '/'; });
-
-// 		return date::time_of_day<minutes>(minutes(std::stoi(args.at(0)) * 60 + std::stoi(args.at(1))));
-// 	}(args.at(0));
-
-// 	auto ymd = [](auto& ts) {
-// 		std::vector<std::string> args;
-// 		boost::split(args, ts, [](char c) { return c == '/'; });
-
-// 		return date::year_month_day(date::day(std::stoi(args.at(0))) / std::stoi(args.at(1)) / std::stoi(args.at(2)));
-// 	}(args.at(1));
-
-// 	return std::make_pair(ymd, tod);
-// }
-
-TgBot::InlineKeyboardMarkup::Ptr makeAddIKeyboard(time_point_s localTp) {
-	date::year_month_day ymd{date::sys_days{date::floor<date::days>(localTp.time_since_epoch())}};
-	date::time_of_day<minutes> tod{
-	    date::floor<minutes>(localTp.time_since_epoch() - date::sys_days{ymd}.time_since_epoch())};
-
-	std::stringstream monthName;
-	monthName << ymd.month();
-
-	std::stringstream yearName;
-	yearName << ymd.year();
-
-	auto k = std::make_shared<TgBot::InlineKeyboardMarkup>();
-	setButton(k, 0, 0, makeButon("<5", fmt::format("/info {}", dateTimeToQueryFormat(ymd - date::years(5), tod))));
-	setButton(k, 1, 0, makeButon("<1", fmt::format("/info {}", dateTimeToQueryFormat(ymd - date::years(1), tod))));
-	setButton(k, 2, 0, makeButon(yearName.str(), "_"));
-	setButton(k, 3, 0, makeButon("1>", fmt::format("/info {}", dateTimeToQueryFormat(ymd + date::years(1), tod))));
-	setButton(k, 4, 0, makeButon("5>", fmt::format("/info {}", dateTimeToQueryFormat(ymd + date::years(5), tod))));
-
-	setButton(k, 0, 1, makeButon("<6", fmt::format("/info {}", dateTimeToQueryFormat(ymd - date::months(6), tod))));
-	setButton(k, 1, 1, makeButon("<1", fmt::format("/info {}", dateTimeToQueryFormat(ymd - date::months(1), tod))));
-	setButton(k, 2, 1, makeButon(monthName.str(), "_"));
-	setButton(k, 3, 1, makeButon("1>", fmt::format("/info {}", dateTimeToQueryFormat(ymd + date::months(1), tod))));
-	setButton(k, 4, 1, makeButon("6>", fmt::format("/info {}", dateTimeToQueryFormat(ymd + date::months(6), tod))));
-
-	setButton(k, 0, 2, makeButon("Пн", "_"));
-	setButton(k, 1, 2, makeButon("Вт", "_"));
-	setButton(k, 2, 2, makeButon("Ср", "_"));
-	setButton(k, 3, 2, makeButon("Чт", "_"));
-	setButton(k, 4, 2, makeButon("Пт", "_"));
-	setButton(k, 5, 2, makeButon("Сб", "_"));
-	setButton(k, 6, 2, makeButon("Вс", "_"));
-
-	int todayDay = static_cast<unsigned>(ymd.day());
-	int lastDay = static_cast<unsigned>(date::year_month_day_last(ymd.year(), date::month_day_last(ymd.month())).day());
-	int firstWeekDay = date::year_month_weekday(date::day(1) / ymd.month() / ymd.year()).weekday().iso_encoding() - 1;
-	int currDay = 0;
-
-	for (int i = 0; i != 50; ++i) {
-		int x = i % 7;
-		int y = i / 7;
-		if (i >= firstWeekDay && currDay < lastDay) {
-			setButton(k, x, y + 3,
-			    makeButon(currDay + 1 == todayDay ? fmt::format("|{}|", currDay + 1) : std::to_string(currDay + 1),
-			        fmt::format("/info {}",
-			            dateTimeToQueryFormat(date::year_month_day(date::day(currDay + 1) / ymd.month() / ymd.year()),
-			                tod))));
-			currDay++;
-		} else {
-			setButton(k, x, y + 3, makeButon(" ", "_"));
-			if (x == 6) {
-				break;
-			}
-		}
-	}
-	setButton(k, 0, k->inlineKeyboard.size(), makeButon("Закрыть", "/delete_me"));
-
-	return k;
-}
-
 struct ReminderInfo {
 	std::string descr;
 
@@ -474,10 +381,7 @@ std::string renderRemindersForInfo(const std::vector<std::pair<time_point_s, Rem
 	if (rems.empty()) {
 		return out;
 	}
-	// date::year_month_day{date::sys_days{date::floor<date::days>(rems.back().first.time_since_epoch())}};
-
-	// auto dd = date::floor<date::days>(rems.back().first.time_since_epoch()) -
-	//          date::floor<date::days>(rems.front().first.time_since_epoch());
+	
 	for (auto& r : rems) {
 		out += fmt::format("{}: {}\n", prettyDateTime(r.first), r.second.descr);
 	}
@@ -670,32 +574,7 @@ int main(int, char**) {
 			bot.getApi().sendMessage(msg->chat->id, "Здравствуйте, вы зарегестрированны.");
 		} catch (const std::exception& e) { std::cerr << e.what(); }
 	};
-	// auto addi = [&](TgBot::Message::Ptr msg) {
-	// 	try {
-	// 		if (!msg->chat) {
-	// 			std::cerr << "Невозможно переслать сообщение" << std::endl;
-	// 			return;
-	// 		}
-
-	// 		if (!msg->from) {
-	// 			bot.getApi().sendMessage(msg->chat->id, "⚠️ Несуществующий пользователь!");
-	// 			return;
-	// 		}
-
-	// 		std::int64_t userId = msg->from->id;
-	// 		std::int64_t chatId = msg->chat->id;
-
-	// 		std::vector<std::string> args;
-	// 		boost::split(args, msg->text, [](char c) { return c == ' ' || c == '\n' || c == '\t'; });
-
-	// 		if (args.size() == 1) {
-	// 			bot.getApi().sendMessage(chatId, "Выберите дату и повтор:", false, 0, makeAddIKeyboard(now()));
-	// 			bot.getApi().sendMessage(msg->chat->id, "qwe", false, 0, makeAddIKeyboard(now()));
-	// 		}
-
-	// 	} catch (const std::exception& e) { std::cerr << e.what(); }
-	// };
-	auto add = [&](TgBot::Message::Ptr msg) {
+	auto add = [&](TgBot::Message::Ptr msg, CallbackQuery::Ptr query) {
 		try {
 			auto [userId, chatId] = getUserChatOrThrow(msg);
 
@@ -731,8 +610,15 @@ int main(int, char**) {
 
 			q.addTimer(chatId, nextTp, ri);
 
-			bot.getApi().sendMessage(chatId, fmt::format("✅🗓️ Напоминание добавленно.\n{}\nСледующее срабатывание: {}",
-			                                     ri.pretty(), prettyDateTime(nextTp)));
+			if (query) {
+				bot.getApi().editMessageText(fmt::format("✅🗓️ Напоминание добавленно.\n{}\nСледующее срабатывание: {}",
+				                                 ri.pretty(), prettyDateTime(nextTp)),
+				    chatId, msg->messageId);
+			} else {
+				bot.getApi().sendMessage(chatId,
+				    fmt::format("✅🗓️ Напоминание добавленно.\n{}\nСледующее срабатывание: {}", ri.pretty(),
+				        prettyDateTime(nextTp)));
+			}
 		} catch (const std::exception& e) { std::cerr << e.what(); }
 	};
 	auto list = [&](TgBot::Message::Ptr msg) {
@@ -905,45 +791,12 @@ int main(int, char**) {
 			}
 		} catch (const std::exception& e) { std::cerr << e.what(); }
 	};
-	// auto info = [&](TgBot::Message::Ptr msg, std::int64_t messageId) {
-	// 	auto [userId, chatId] = getUserChatOrThrow(msg);
-
-	// 	if (!isChatRegistered(db, chatId)) {
-	// 		bot.getApi().sendMessage(chatId, "⚠️ Бот еще не зарегестрирован в этом чате!(/start)");
-	// 		return;
-	// 	}
-
-	// 	std::vector<std::string> args;
-	// 	boost::split(args, msg->text, [](char c) { return c == ' ' || c == '\n' || c == '\t'; });
-
-	// 	// if (args.size() > 2) {
-	// 	// 	bot.getApi().sendMessage(chatId, "⚠️ Неверное колличество аргументов!");
-	// 	// 	return;
-	// 	// }
-	// 	args.erase(args.begin());
-
-	// 	if (args.empty()) {
-	// 		args.push_back(tpToQueryFormat(now()));
-	// 	}
-
-	// 	auto interval = parseInfoArgs(args);
-	// 	auto outMsg = renderRemindersForInfo(q.getInterval(chatId, interval.first, interval.second));
-
-	// 	auto k = makeAddIKeyboard(now());
-
-	// 	if (outMsg.empty()) {
-	// 		outMsg = "⚠️ Нет напоминаний!";
-	// 	}
-	// 	bot.getApi().sendMessage(chatId, outMsg, false, 0, k);
-	// };
 
 	bot.getEvents().onCommand("start", start);
 	bot.getEvents().onCommand("list", list);
-	bot.getEvents().onCommand("add", add);
-	// bot.getEvents().onCommand("addi", addi);
+	bot.getEvents().onCommand("add", [&](auto q) { add(q, nullptr); });
 	bot.getEvents().onCommand("del", [&](auto q) { del(q, nullptr); });
 	bot.getEvents().onCommand("deli", [&](auto q) { deli(q, 0); });
-	// bot.getEvents().onCommand("info", [&](auto q) { info(q, 0); });
 
 	bot.getEvents().onCallbackQuery([&](CallbackQuery::Ptr query) {
 		std::vector<std::string> args;
@@ -962,6 +815,11 @@ int main(int, char**) {
 			ar_date(bot, ds)(query);
 		} else if (args.front() == "/ar_time") {
 			ar_time(bot, ds)(query);
+		} else if (args.front() == "/ar_repeat") {
+			ar_repeat(bot, ds)(query);
+		} else if (args.front() == "/add") {
+			query->message->text = query->data;
+			add(query->message, query);
 		}
 	});
 

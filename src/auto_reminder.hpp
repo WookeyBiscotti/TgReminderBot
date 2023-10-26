@@ -206,20 +206,6 @@ inline TgBot::InlineKeyboardMarkup::Ptr makeArTimeKeyboard(date::time_of_day<std
 	return k;
 }
 
-inline TgBot::InlineKeyboardMarkup::Ptr makeArRepeatKeyboard(date::time_of_day<std::chrono::minutes> tod) {
-	using namespace std::chrono;
-
-	auto k = std::make_shared<TgBot::InlineKeyboardMarkup>();
-	setButton(k, 0, 0, makeButon("+6", fmt::format("/ar_repeat {}", arTimeStr(todAdd(tod, hours(6))))));
-
-	const auto lastRow = k->inlineKeyboard.size();
-	setButton(k, 0, lastRow, makeButon("❌ Отмена", "/delete_me"));
-	setButton(k, 1, lastRow, makeButon("⬅️ Назад ", "/ar_date"));
-	setButton(k, 2, lastRow, makeButon("➡️ Далее ", "/ar_time"));
-
-	return k;
-}
-
 inline auto ar_date(TgBot::Bot& bot, DynamicStorage& ds) {
 	return [&](TgBot::CallbackQuery::Ptr query) {
 		try {
@@ -275,6 +261,9 @@ inline auto ar_time(TgBot::Bot& bot, DynamicStorage& ds) {
 				throw std::runtime_error("Нет команды");
 			} else if (args.size() == 1) {
 				auto found = ds.find(dsKey);
+				if (!found) {
+					throw std::runtime_error("internal error !found");
+				}
 				if (!found->contains("time")) {
 					args.push_back(arTimeStr(todFromTp({})));
 				} else {
@@ -302,9 +291,11 @@ inline auto ar_time(TgBot::Bot& bot, DynamicStorage& ds) {
 }
 
 struct Repeating {
-	size_t d = 0;
-	size_t m = 0;
-	size_t y = 0;
+	std::string s;
+	up::value all;
+	int d = 0;
+	int m = 0;
+	int y = 0;
 	std::bitset<7> w = 0;
 
 	std::string to_string() const {
@@ -315,7 +306,27 @@ struct Repeating {
 		} else if (y != 0) {
 			return "y" + std::to_string(y);
 		} else if (w.to_ulong() != 0) {
-			return "d" + std::to_string(w.to_ulong());
+			return "w" + std::to_string(w.to_ulong());
+		} else {
+			return "n";
+		}
+	}
+
+	std::string to_command_string() const {
+		if (d != 0) {
+			return "d" + std::to_string(d);
+		} else if (m != 0) {
+			return "m" + std::to_string(m);
+		} else if (y != 0) {
+			return "y" + std::to_string(y);
+		} else if (w.to_ulong() != 0) {
+			std::string s = "w";
+			for (size_t i = 0; i != 7; ++i) {
+				if (w[i]) {
+					s += std::to_string(i + 1);
+				}
+			}
+			return s;
 		} else {
 			return "n";
 		}
@@ -328,7 +339,7 @@ struct Repeating {
 		const auto c = str[0];
 		str.erase(str.begin());
 
-		const auto count = str.empty() ? 0 : std::stoul(str);
+		const int count = std::max<int>(0, str.empty() ? 0 : std::stoul(str));
 
 		if (c == 'd') {
 			return Repeating{.d = count};
@@ -342,4 +353,137 @@ struct Repeating {
 			return {};
 		}
 	}
+
+	bool noRepeat() const { return d == 0 && m == 0 && y == 0 && w.none(); }
 };
+
+inline TgBot::InlineKeyboardMarkup::Ptr makeArRepeatKeyboard(Repeating rp) {
+	using namespace std::chrono;
+
+	auto k = std::make_shared<TgBot::InlineKeyboardMarkup>();
+	if (rp.noRepeat()) {
+		setButton(k, 0, 0, makeButon("|Без повторений|", "_"));
+	} else {
+		setButton(k, 0, 0, makeButon("Без повторений", "/ar_repeat n"));
+	}
+
+	setButton(k, 0, 1, makeButon("-10", rp.d ? fmt::format("/ar_repeat d{}", rp.d - 10) : " "));
+	setButton(k, 1, 1, makeButon("-1", rp.d ? fmt::format("/ar_repeat d{}", rp.d - 1) : " "));
+	if (rp.d == 0) {
+		setButton(k, 2, 1, makeButon(fmt::format("{} Дней", rp.d), "_"));
+	} else {
+		setButton(k, 2, 1, makeButon(fmt::format("|{} Дней|", rp.d), "_"));
+	}
+	setButton(k, 3, 1, makeButon("+1", fmt::format("/ar_repeat d{}", rp.d + 1)));
+	setButton(k, 4, 1, makeButon("+10", fmt::format("/ar_repeat d{}", rp.d + 10)));
+
+	setButton(k, 0, 2, makeButon("-10", rp.m ? fmt::format("/ar_repeat m{}", rp.m - 10) : " "));
+	setButton(k, 1, 2, makeButon("-1", rp.m ? fmt::format("/ar_repeat m{}", rp.m - 1) : " "));
+	if (rp.m == 0) {
+		setButton(k, 2, 2, makeButon(fmt::format("{} Месяцев", rp.m), "_"));
+	} else {
+		setButton(k, 2, 2, makeButon(fmt::format("|{} Месяцев|", rp.m), "_"));
+	}
+	setButton(k, 3, 2, makeButon("+1", fmt::format("/ar_repeat m{}", rp.m + 1)));
+	setButton(k, 4, 2, makeButon("+10", fmt::format("/ar_repeat m{}", rp.m + 10)));
+
+	setButton(k, 0, 3, makeButon("-10", rp.y ? fmt::format("/ar_repeat y{}", rp.y - 10) : " "));
+	setButton(k, 1, 3, makeButon("-1", rp.y ? fmt::format("/ar_repeat y{}", rp.y - 1) : " "));
+	if (rp.y == 0) {
+		setButton(k, 2, 3, makeButon(fmt::format("{} Лет", rp.y), "_"));
+	} else {
+		setButton(k, 2, 3, makeButon(fmt::format("|{} Лет|", rp.y), "_"));
+	}
+	setButton(k, 3, 3, makeButon("+1", fmt::format("/ar_repeat y{}", rp.y + 1)));
+	setButton(k, 4, 3, makeButon("+10", fmt::format("/ar_repeat y{}", rp.y + 10)));
+
+	if (!rp.w[0]) {
+		setButton(k, 0, 4, makeButon("Пн", fmt::format("/ar_repeat w{}", rp.w.to_ulong() | 0b1)));
+	} else {
+		setButton(k, 0, 4, makeButon("|Пн|", fmt::format("/ar_repeat w{}", rp.w.to_ulong() & 0b1111110)));
+	}
+	if (!rp.w[1]) {
+		setButton(k, 1, 4, makeButon("Вт", fmt::format("/ar_repeat w{}", rp.w.to_ulong() | 0b10)));
+	} else {
+		setButton(k, 1, 4, makeButon("|Вт|", fmt::format("/ar_repeat w{}", rp.w.to_ulong() & 0b1111101)));
+	}
+	if (!rp.w[2]) {
+		setButton(k, 2, 4, makeButon("Ср", fmt::format("/ar_repeat w{}", rp.w.to_ulong() | 0b100)));
+	} else {
+		setButton(k, 2, 4, makeButon("|Ср|", fmt::format("/ar_repeat w{}", rp.w.to_ulong() & 0b1111011)));
+	}
+	if (!rp.w[3]) {
+		setButton(k, 3, 4, makeButon("Чт", fmt::format("/ar_repeat w{}", rp.w.to_ulong() | 0b1000)));
+	} else {
+		setButton(k, 3, 4, makeButon("|Чт|", fmt::format("/ar_repeat w{}", rp.w.to_ulong() & 0b1110111)));
+	}
+	if (!rp.w[4]) {
+		setButton(k, 4, 4, makeButon("Пт", fmt::format("/ar_repeat w{}", rp.w.to_ulong() | 0b10000)));
+	} else {
+		setButton(k, 4, 4, makeButon("|Пт|", fmt::format("/ar_repeat w{}", rp.w.to_ulong() & 0b1101111)));
+	}
+	if (!rp.w[5]) {
+		setButton(k, 5, 4, makeButon("Сб", fmt::format("/ar_repeat w{}", rp.w.to_ulong() | 0b100000)));
+	} else {
+		setButton(k, 5, 4, makeButon("|Сб|", fmt::format("/ar_repeat w{}", rp.w.to_ulong() & 0b1011111)));
+	}
+	if (!rp.w[6]) {
+		setButton(k, 6, 4, makeButon("Вс", fmt::format("/ar_repeat w{}", rp.w.to_ulong() | 0b1000000)));
+	} else {
+		setButton(k, 6, 4, makeButon("|Вс|", fmt::format("/ar_repeat w{}", rp.w.to_ulong() & 0b0111111)));
+	}
+
+	const auto lastRow = k->inlineKeyboard.size();
+	setButton(k, 0, lastRow, makeButon("❌ Отмена", "/delete_me"));
+	setButton(k, 1, lastRow, makeButon("⬅️ Назад ", "/ar_time"));
+	setButton(k, 2, lastRow,
+	    makeButon("✅ Создать ", fmt::format("/add {} {} {} {}", rp.all.at("date").get_string_view_or_throw(),
+	                                rp.all.at("time").get_string_view_or_throw(), rp.to_command_string(), rp.s)));
+
+	return k;
+}
+
+inline auto ar_repeat(TgBot::Bot& bot, DynamicStorage& ds) {
+	return [&](TgBot::CallbackQuery::Ptr query) {
+		try {
+			if (!query->message) {
+				return;
+			}
+			auto [userId, chatId] = getUserChatOrThrow(query->message);
+
+			auto dsKey = chatMsgKey(chatId, query->message->messageId);
+			auto args = split(query->data);
+			if (args.empty()) {
+				throw std::runtime_error("Нет команды");
+			} else if (args.size() == 1) {
+				auto found = ds.find(dsKey);
+				if (!found) {
+					throw std::runtime_error("internal error !found");
+				}
+				if (!found->contains("repeat")) {
+					args.push_back(Repeating{}.to_string());
+				} else {
+					args.push_back(found->at("repeat").get_string());
+				}
+			}
+
+			auto state = ds.find(dsKey);
+			if (!state) {
+				throw std::runtime_error("No state");
+			}
+			(*state)["repeat"] = args[1];
+			ds.make(dsKey, *state);
+
+			auto rp = Repeating::from_string(args[1]);
+			rp.all = *state;
+			rp.s = query->message->text;
+			auto k = makeArRepeatKeyboard(rp);
+
+			bot.getApi().editMessageText(query->message->text, chatId, query->message->messageId, "", "", false, k);
+		} catch (const std::exception& e) {
+			if (query->message->chat) {
+				bot.getApi().sendMessage(query->message->chat->id, e.what());
+			}
+		}
+	};
+}
