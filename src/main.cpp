@@ -829,6 +829,9 @@ int main(int, char**) {
 		if (msg->chat->type != Chat::Type::Private) {
 			return;
 		}
+		if(msg->text[0] == '/') {
+			return;
+		}
 
 		sendAutoReminderMsg(bot, msg->chat->id, msg->text);
 	});
