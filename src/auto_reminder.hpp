@@ -1,6 +1,7 @@
 #pragma once
 
 #include "dynamic_storage.hpp"
+#include "reminder_info.hpp"
 #include "utils.hpp"
 #include <bitset>
 
@@ -233,6 +234,7 @@ inline auto ar_date(TgBot::Bot& bot, DynamicStorage& ds) {
 				throw std::runtime_error("No state");
 			}
 			(*state)["date"] = args[1];
+			(*state)["text"] = query->message->text;
 			ds.make(dsKey, *state);
 
 			auto ymd = arStrDate(args[1]);
@@ -261,7 +263,7 @@ inline auto ar_time(TgBot::Bot& bot, DynamicStorage& ds) {
 				throw std::runtime_error("Нет команды");
 			} else if (args.size() == 1) {
 				auto found = ds.find(dsKey);
-				if (!found) {
+				if (!found || !found->is_object()) {
 					throw std::runtime_error("internal error !found");
 				}
 				if (!found->contains("time")) {
@@ -291,7 +293,6 @@ inline auto ar_time(TgBot::Bot& bot, DynamicStorage& ds) {
 }
 
 struct Repeating {
-	std::string s;
 	up::value all;
 	int d = 0;
 	int m = 0;
@@ -437,8 +438,8 @@ inline TgBot::InlineKeyboardMarkup::Ptr makeArRepeatKeyboard(Repeating rp) {
 	setButton(k, 0, lastRow, makeButon("❌ Отмена", "/delete_me"));
 	setButton(k, 1, lastRow, makeButon("⬅️ Назад ", "/ar_time"));
 	setButton(k, 2, lastRow,
-	    makeButon("✅ Создать ", fmt::format("/add {} {} {} {}", rp.all.at("date").get_string_view_or_throw(),
-	                                rp.all.at("time").get_string_view_or_throw(), rp.to_command_string(), rp.s)));
+	    makeButon("✅ Создать ", fmt::format("/add {} {} {} ", rp.all.at("date").get_string_view_or_throw(),
+	                                rp.all.at("time").get_string_view_or_throw(), rp.to_command_string())));
 
 	return k;
 }
@@ -457,7 +458,7 @@ inline auto ar_repeat(TgBot::Bot& bot, DynamicStorage& ds) {
 				throw std::runtime_error("Нет команды");
 			} else if (args.size() == 1) {
 				auto found = ds.find(dsKey);
-				if (!found) {
+				if (!found || !found->is_object()) {
 					throw std::runtime_error("internal error !found");
 				}
 				if (!found->contains("repeat")) {
@@ -476,7 +477,6 @@ inline auto ar_repeat(TgBot::Bot& bot, DynamicStorage& ds) {
 
 			auto rp = Repeating::from_string(args[1]);
 			rp.all = *state;
-			rp.s = query->message->text;
 			auto k = makeArRepeatKeyboard(rp);
 
 			bot.getApi().editMessageText(query->message->text, chatId, query->message->messageId, "", "", false, k);
