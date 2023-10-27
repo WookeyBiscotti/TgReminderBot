@@ -287,7 +287,7 @@ int main(int, char**) {
 			std::string argsStr;
 
 			if (query) {
-				argsStr = msg->text + query->data;
+				argsStr = query->data + msg->text;
 			} else {
 				argsStr = msg->text;
 			}
@@ -318,12 +318,12 @@ int main(int, char**) {
 			q.addTimer(chatId, nextTp, ri);
 
 			if (query) {
-				bot.getApi().editMessageText(fmt::format("✅🗓️ Напоминание добавленно.\n{}\nСледующее срабатывание: {}",
+				bot.getApi().editMessageText(fmt::format("✅🗓️ Напоминание добавленно.\n{}\nСледующее срабатывание:\n {}",
 				                                 ri.pretty(), prettyDateTime(nextTp)),
 				    chatId, msg->messageId);
 			} else {
 				bot.getApi().sendMessage(chatId,
-				    fmt::format("✅🗓️ Напоминание добавленно.\n{}\nСледующее срабатывание: {}", ri.pretty(),
+				    fmt::format("✅🗓️ Напоминание добавленно.\n{}\nСледующее срабатывание:\n {}", ri.pretty(),
 				        prettyDateTime(nextTp)));
 			}
 		} catch (const std::exception& e) { std::cerr << e.what(); }
